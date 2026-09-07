@@ -1,7 +1,7 @@
-from flask import Blueprint
+from flask import Blueprint, render_template
 
 contact_bp = Blueprint('contact', __name__)
 
 @contact_bp.route('/contact')
 def contact():
-    return "Contact page coming soon"
+    return render_template('contact.html')

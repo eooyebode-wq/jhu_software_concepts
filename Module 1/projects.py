@@ -1,8 +1,8 @@
-from flask import Blueprint
+from flask import Blueprint, render_template
 
 projects_bp = Blueprint('projects', __name__)
 
 
 @projects_bp.route('/projects')
 def projects():
-    return "Projects page coming soon"
+    return render_template('projects.html')
