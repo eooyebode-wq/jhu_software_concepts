@@ -32,3 +32,24 @@ nav a.active {
     width: 250px;
     border-radius: 8px;
 }
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background-color: #f4f6f8;
+    color: #333;
+}
+
+.page-content {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+h1, h2 {
+    color: #1a1a1a;
+}
+
+a {
+    color: #2c7be5;
+}
