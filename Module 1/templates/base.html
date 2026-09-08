@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{% block title %}My Site{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    
+<nav>
+    <a href="{{ url_for('home.home') }}" class="{% if request.endpoint == 'home.home' %}active{% endif %}">Home</a>
+    <a href="{{ url_for('contact.contact') }}" class="{% if request.endpoint == 'contact.contact' %}active{% endif %}">Contact</a>
+    <a href="{{ url_for('projects.projects') }}" class="{% if request.endpoint == 'projects.projects' %}active{% endif %}">Projects</a>
+</nav>
+
+
+    {% block content %}{% endblock %}
+</body>
+</html>
