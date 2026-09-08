@@ -13,13 +13,13 @@ Requirements
 
 How to Run
 ----------
-1. Open a terminal and navigate into this folder (Module 1).
+1. Open a terminal and navigate into this folder (module_1).
 
 2. Install the required package:
    pip install -r requirements.txt
 
 3. Start the server:
-   python3 run.py
+   python3 run.py (try this also if "python run.py" does not work)
 
 4. Open a web browser and go to:
    http://localhost:8080
