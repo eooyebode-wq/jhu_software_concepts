@@ -16,3 +16,19 @@ nav a.active {
     padding: 5px 10px;
     border-radius: 4px;
 }
+
+.home-container {
+    display: flex;
+    gap: 30px;
+    padding: 20px;
+    align-items: center;
+}
+
+.bio {
+    flex: 1;
+}
+
+.photo img {
+    width: 250px;
+    border-radius: 8px;
+}

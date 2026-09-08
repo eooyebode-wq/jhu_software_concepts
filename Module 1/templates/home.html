@@ -1,5 +1,14 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1>Welcome to Emmanuel's Personal Website!</h1>
+<div class="home-container">
+    <div class="bio">
+        <h1>Emmanuel Oyebode</h1>
+        <h2>Informatics Technical Program Manager</h2>
+        <p>Hello, I'm Emmanuel. I currently work as an Informatics TPM in the Medical device industry, where I handle installations, qualifications and upgrades of middleware devices. I got my bachelor's in Electrical Engineering from University of Houston with a minor in Technology Project Management, and am currently pursuing a master's in Engineering Management with a focus on Artificial Intelligence.</p>
+    </div>
+    <div class="photo">
+        <img src="{{ url_for('static', filename='profile.jpg') }}" alt="Photo of Emmanuel Oyebode">
+    </div>
+</div>
 {% endblock %}
