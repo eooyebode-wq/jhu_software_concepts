@@ -125,7 +125,40 @@ from scratch._
 
 ## Data schema
 
-_TODO: field list and the `None`/`""` convention for missing data._
+Every record in `applicant_data.json` has the same 15 keys; a value that
+wasn't available in the source is always `null` (Python `None`) -- keys are
+never omitted, and no other placeholder (e.g. empty string) is used.
+
+| Key | Source (raw GradCafe field) | Notes |
+|---|---|---|
+| `program` | `program` | Raw/traceability field, never altered |
+| `university` | `school` | Raw, never altered |
+| `comments` | `notes` | HTML entities/tags stripped (`html.unescape` + tag regex); content otherwise untouched |
+| `date_added` | `created_at` | Date the entry was added to GradCafe |
+| `url` | built from `id` | Permalink, e.g. `https://www.thegradcafe.com/result/1020483` |
+| `applicant_status` | `decision` | Normalized to one of `Accepted`/`Rejected`/`Wait listed`/`Interview`/`Other` |
+| `acceptance_date` | `acceptedDate` | Only set when `applicant_status == "Accepted"` |
+| `rejection_date` | `rejectedDate` | Only set when `applicant_status == "Rejected"` |
+| `semester_year` | `season` | e.g. `"Spring 2027"` |
+| `student_type` | `status` | International/American. Note: GradCafe's own `status` field means nationality, not decision -- renamed here to avoid that ambiguity |
+| `gre_score` | `greq` | |
+| `gre_v_score` | `grev` | |
+| `gre_aw_score` | `grew` | |
+| `degree_type` | `level` | Kept as GradCafe provides it (e.g. `"MFA"`, `"PhD"`), not force-bucketed into just Masters/PhD -- collapsing e.g. "MFA" into "Masters" would fabricate a categorization the source doesn't state |
+| `gpa` | `ugpa` | |
+
+**`program` and `university` are already separate fields at the source** --
+GradCafe's site (a Laravel + Inertia SPA) never mixes them into one string the
+way older/manual scraping approaches would need to split. Both schools and
+programs appear to be selected from an autocomplete tied to internal IDs
+(`school_id`, `program_id` in the raw data), so naming is likely more
+consistent for recent entries than the classic "JHU vs Johns Hopkins vs John
+Hopkins" variance the assignment's cleaning section describes -- though older
+or unusual entries can still vary, which is exactly what the local-LLM
+standardization pass (see below) is for. Real-world messiness is still
+present, e.g. one observed entry's `school` was a joke/troll value
+(`"University of Toronto (Pissmaster)"`) -- preserved as-is, since we don't
+get to "fix" what a user actually typed.
 
 ## Cleaning pipeline / canonical list edits
 

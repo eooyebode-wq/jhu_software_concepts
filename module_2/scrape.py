@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.robotparser as robotparser
 
 from bs4 import BeautifulSoup
@@ -87,25 +88,53 @@ def _fetch_page_json(driver: webdriver.Chrome, url: str) -> dict:
     return json.loads(app_div["data-page"])
 
 
-def scrape_data():
-    """Scrape applicant entries from The Grad Cafe via an attached Chrome session.
+POLITE_DELAY_SECONDS = 1.5
 
-    TODO (Phase 3): loop pages via _fetch_page_json()/next cursor, hand each
-    record to _parse_entry(), persist progress for resumability, stop
-    politely once the target count is reached or the site blocks/rate-limits.
+
+def scrape_data(max_records: int | None = None, start_url: str = SURVEY_URL) -> list[dict]:
+    """Scrape raw applicant entries from The Grad Cafe via an attached Chrome session.
+
+    Returns a list of raw GradCafe result dicts (one per applicant entry),
+    following cursor-based pagination until `max_records` is reached or the
+    site stops returning a next page. Stops immediately (no retry) if a page
+    fetch fails, treating that as a possible block/rate-limit.
+
+    TODO (Phase 4): resumability (persist progress, resume from last cursor)
+    and parallelization are added when scaling to the full 40,000-entry run.
     """
     if not _robots_allows("/survey/"):
         raise RuntimeError("robots.txt disallows /survey/ -- refusing to scrape.")
-    raise NotImplementedError
 
+    driver = _attach_driver()
+    records: list[dict] = []
+    url = start_url
 
-def _parse_entry(record: dict) -> dict:
-    """Map one raw GradCafe result record onto the target applicant_data.json schema.
+    try:
+        while url:
+            if not _is_same_site(url):
+                raise RuntimeError(f"Refusing to follow off-site URL: {url}")
 
-    TODO (Phase 3): field-by-field mapping (program/university/status/dates/
-    GRE/GPA/etc.), preserving the raw `program` text untouched.
-    """
-    raise NotImplementedError
+            try:
+                data = _fetch_page_json(driver, url)
+            except Exception as exc:
+                print(f"Stopping: page fetch failed for {url} ({exc}).")
+                break
+
+            page_records = data["props"]["results"]["data"]
+            records.extend(page_records)
+            print(f"Fetched {len(page_records)} records (total: {len(records)}).")
+
+            if max_records is not None and len(records) >= max_records:
+                records = records[:max_records]
+                break
+
+            url = data["props"]["results"]["links"]["next"]
+            if url:
+                time.sleep(POLITE_DELAY_SECONDS)
+    finally:
+        driver.quit()
+
+    return records
 
 
 if __name__ == "__main__":
