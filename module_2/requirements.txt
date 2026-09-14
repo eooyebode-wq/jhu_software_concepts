@@ -1,0 +1,12 @@
+# Grad Cafe scraper + cleaning pipeline (module_2)
+# Python 3.10+
+
+# --- Scraping ---
+urllib3>=2.0,<3
+beautifulsoup4>=4.12,<5
+selenium>=4.15,<5
+
+# --- Cleaning pipeline (llm_hosting) ---
+Flask>=2.3,<4
+huggingface_hub>=0.23.0
+llama-cpp-python>=0.2.90,<0.3.0
