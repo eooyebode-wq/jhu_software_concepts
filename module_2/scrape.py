@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import urllib.robotparser as robotparser
 
@@ -89,9 +90,45 @@ def _fetch_page_json(driver: webdriver.Chrome, url: str) -> dict:
 
 
 POLITE_DELAY_SECONDS = 1.5
+DEFAULT_TARGET_RECORDS = 40_000
+DEFAULT_RAW_PATH = "raw_scrape_progress.jsonl"
+DEFAULT_STATE_PATH = "raw_scrape_state.json"
 
 
-def scrape_data(max_records: int | None = None, start_url: str = SURVEY_URL) -> list[dict]:
+def _load_raw_records(raw_path: str) -> list[dict]:
+    """Load whatever raw records have been persisted so far (possibly none)."""
+    if not os.path.exists(raw_path):
+        return []
+    with open(raw_path, "r", encoding="utf-8") as f:
+        return [json.loads(line) for line in f if line.strip()]
+
+
+def _append_raw_records(raw_path: str, records: list[dict]) -> None:
+    """Append newly fetched records to the raw progress file, one JSON object per line."""
+    with open(raw_path, "a", encoding="utf-8") as f:
+        for record in records:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def _load_state(state_path: str) -> dict | None:
+    if not os.path.exists(state_path):
+        return None
+    with open(state_path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _save_state(state_path: str, next_url: str | None, record_count: int) -> None:
+    with open(state_path, "w", encoding="utf-8") as f:
+        json.dump({"next_url": next_url, "record_count": record_count}, f)
+
+
+def scrape_data(
+    max_records: int = DEFAULT_TARGET_RECORDS,
+    start_url: str = SURVEY_URL,
+    raw_path: str = DEFAULT_RAW_PATH,
+    state_path: str = DEFAULT_STATE_PATH,
+    debugger_address: str = DEBUGGER_ADDRESS,
+) -> list[dict]:
     """Scrape raw applicant entries from The Grad Cafe via an attached Chrome session.
 
     Returns a list of raw GradCafe result dicts (one per applicant entry),
@@ -99,43 +136,67 @@ def scrape_data(max_records: int | None = None, start_url: str = SURVEY_URL) -> 
     site stops returning a next page. Stops immediately (no retry) if a page
     fetch fails, treating that as a possible block/rate-limit.
 
-    TODO (Phase 4): resumability (persist progress, resume from last cursor)
-    and parallelization are added when scaling to the full 40,000-entry run.
+    Resumable: progress is persisted to `raw_path` (one JSON record per line)
+    and `state_path` (last-seen pagination cursor) after every page, so if the
+    process crashes, is rate-limited, or Chrome is closed partway through,
+    rerunning this function picks up where it left off instead of restarting.
+    Both paths are relative by default -- no machine-specific hardcoding.
     """
     if not _robots_allows("/survey/"):
         raise RuntimeError("robots.txt disallows /survey/ -- refusing to scrape.")
 
-    driver = _attach_driver()
-    records: list[dict] = []
-    url = start_url
+    existing = _load_raw_records(raw_path)
+    if len(existing) >= max_records:
+        print(f"Already have {len(existing)} records (>= target {max_records}); nothing to do.")
+        return existing[:max_records]
+
+    state = _load_state(state_path)
+    url = state["next_url"] if state else start_url
+    total = len(existing)
+    print(f"Resuming from {total} saved records." if total else "Starting fresh scrape.")
+
+    driver = _attach_driver(debugger_address)
 
     try:
-        while url:
+        while url and total < max_records:
             if not _is_same_site(url):
                 raise RuntimeError(f"Refusing to follow off-site URL: {url}")
 
             try:
                 data = _fetch_page_json(driver, url)
             except Exception as exc:
-                print(f"Stopping: page fetch failed for {url} ({exc}).")
+                print(f"Stopping: page fetch failed for {url} ({exc}). Progress saved -- rerun to resume.")
                 break
 
             page_records = data["props"]["results"]["data"]
-            records.extend(page_records)
-            print(f"Fetched {len(page_records)} records (total: {len(records)}).")
-
-            if max_records is not None and len(records) >= max_records:
-                records = records[:max_records]
-                break
-
+            _append_raw_records(raw_path, page_records)
+            total += len(page_records)
             url = data["props"]["results"]["links"]["next"]
-            if url:
-                time.sleep(POLITE_DELAY_SECONDS)
+            _save_state(state_path, url, total)
+            print(f"Fetched {len(page_records)} records (total: {total}).")
+
+            if total >= max_records or not url:
+                break
+            time.sleep(POLITE_DELAY_SECONDS)
     finally:
         driver.quit()
 
-    return records
+    return _load_raw_records(raw_path)[:max_records]
 
 
 if __name__ == "__main__":
-    scrape_data()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Scrape applicant entries from The Grad Cafe.")
+    parser.add_argument("--max-records", type=int, default=DEFAULT_TARGET_RECORDS)
+    parser.add_argument("--debugger-address", default=DEBUGGER_ADDRESS)
+    parser.add_argument("--raw-path", default=DEFAULT_RAW_PATH)
+    parser.add_argument("--state-path", default=DEFAULT_STATE_PATH)
+    args = parser.parse_args()
+
+    scrape_data(
+        max_records=args.max_records,
+        raw_path=args.raw_path,
+        state_path=args.state_path,
+        debugger_address=args.debugger_address,
+    )

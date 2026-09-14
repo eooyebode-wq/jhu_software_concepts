@@ -120,8 +120,38 @@ block, only `/survey/...`, which is correctly allowed under both blocks.
 
 ## Setup & run instructions
 
-_TODO: reproduce `applicant_data.json` and `llm_extend_applicant_data.json`
-from scratch._
+1. `python3 -m venv venv && source venv/bin/activate` (or your own environment manager), then `pip install -r requirements.txt`.
+2. Launch Chrome with remote debugging enabled and a disposable profile directory:
+   ```bash
+   /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+     --remote-debugging-port=9222 \
+     --user-data-dir="/tmp/gradcafe-chrome-profile" \
+     --remote-allow-origins="*"
+   ```
+   Go to `https://www.thegradcafe.com/survey/` in that window and complete Cloudflare's check if shown.
+3. Scrape (resumable -- safe to Ctrl+C and rerun the same command; it picks up from the last saved page):
+   ```bash
+   python scrape.py --max-records 40000
+   ```
+   Produces `raw_scrape_progress.jsonl` (intermediate, gitignored) and `raw_scrape_state.json` (pagination cursor).
+   Optional flags: `--debugger-address`, `--raw-path`, `--state-path`.
+4. Structure into the final schema:
+   ```bash
+   python clean.py --out-path applicant_data.json
+   ```
+5. LLM cleaning pass (Phase 5): see the section below once implemented.
+
+No machine-specific paths are hardcoded -- the Chrome profile directory and
+all script inputs/outputs are CLI-configurable with relative defaults.
+
+**Why scraping isn't parallelized** (Phase 4 considered this, deliberately
+skipped it): pagination is cursor-based, so each page's URL is only known
+after fetching the previous one -- there's no page-number scheme to fan out
+across workers. There's also only one trusted, human-verified browser
+session to drive requests through. Firing concurrent requests through it
+would work against the politeness/no-rate-limit-evasion requirement for no
+real benefit, since the actual bottleneck later (the LLM cleaning pass) is
+far larger and is genuinely parallelizable instead.
 
 ## Data schema
 

@@ -2,3 +2,7 @@
 __pycache__/
 *.pyc
 venv/
+
+# module_2: intermediate scrape progress, not a deliverable
+module_2/raw_scrape_progress.jsonl
+module_2/raw_scrape_state.json

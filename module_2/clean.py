@@ -7,7 +7,7 @@ import html
 import json
 import re
 
-from scrape import _build_entry_url
+from scrape import DEFAULT_RAW_PATH, _build_entry_url, _load_raw_records
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
@@ -80,3 +80,21 @@ def load_data(path: str) -> list[dict]:
     """Load a list of record dicts from a JSON file at `path`."""
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Structure scrape.py's raw output into applicant_data.json."
+    )
+    parser.add_argument("--raw-path", default=DEFAULT_RAW_PATH)
+    parser.add_argument("--out-path", default="applicant_data.json")
+    args = parser.parse_args()
+
+    raw_records = _load_raw_records(args.raw_path)
+    print(f"Loaded {len(raw_records)} raw records from {args.raw_path}.")
+
+    structured = clean_data(raw_records)
+    save_data(structured, args.out_path)
+    print(f"Saved {len(structured)} structured records to {args.out_path}.")
