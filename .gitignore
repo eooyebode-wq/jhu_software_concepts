@@ -7,3 +7,6 @@ venv/
 module_2/raw_scrape_progress.jsonl
 module_2/raw_scrape_state.json
 module_2/scrape_run.log
+module_2/llm_clean_run.log
+module_2/_llm_work/
+module_2/llm_hosting/models/

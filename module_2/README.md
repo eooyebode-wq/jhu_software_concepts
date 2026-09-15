@@ -192,8 +192,78 @@ get to "fix" what a user actually typed.
 
 ## Cleaning pipeline / canonical list edits
 
-_TODO (Phase 5): changes to `llm_hosting` canonical lists, post-processing
-logic, known edge cases._
+**Workflow**: `applicant_data.json`'s already-separated `program`/`university`
+fields are recombined into the single `"program, university"` string
+`llm_hosting/app.py` expects (it's designed to split a combined string --
+ours never needed splitting, since GradCafe already gives them separately,
+but the tool's documented CLI interface still takes that one combined field).
+`app.py` is run unmodified via its own CLI (`--file`/`--out`/`--append`),
+never by importing its internals -- it's treated as the given, external tool
+it is. Its own `_post_normalize_program()`/`_post_normalize_university()`
+already perform the abbreviation-fix/canonical-mapping/fuzzy-matching pass
+described in the assignment, so no separate post-processing layer was added
+on top of it -- see `clean.standardize_names()` in `clean.py`.
+
+**Parallelization**: 2 worker processes (`N_THREADS=5` each), run via
+`subprocess.Popen` against `app.py`'s CLI, each on half the dataset.
+Benchmarked against 1/2/4/5/10-worker configurations on a 20-row sample
+first (see commit history) -- 2 workers was the measured sweet spot (the
+model already uses most of the machine's cores per single inference call;
+more processes just add per-process startup overhead without speeding
+anything up). Measured throughput: ~2 records/sec combined. Full 40,000-row
+run took ~5.5 hours, unattended, via `caffeinate -i` to prevent the Mac from
+sleeping. Each worker's progress is resumable (JSONL output + `--append`),
+matching `scrape.py`'s resumability model, in case of an interruption.
+
+**Canonical list edit**: added `University of Michigan` (bare, no campus
+suffix) to `llm_hosting/canon_universities.txt`, which previously only had
+`University of Michigan, Ann Arbor`. Root cause: when a raw entry has no
+campus suffix, it misses the exact-match check and falls to `difflib`'s
+fuzzy matcher, which is sensitive to *string length*, not just shared
+substrings -- `"University of Michigan"` (23 chars) scored closer to the
+unrelated `"University of Milan"` (20 chars) than to the correct
+`"University of Michigan, Ann Arbor"` (34 chars), despite the latter being
+a strict prefix match. This produced a **confirmed 377 rows** (out of
+40,000) where a US university got mapped to a different university in a
+different country. After adding the canon entry, those 377 rows were
+re-processed through `_post_normalize_university()` directly (no LLM
+re-run needed -- this is a deterministic post-processing step) and now
+correctly read `"University of Michigan"`.
+
+**A broader fix was attempted and reverted.** After finding the Michigan/Milan
+case, a heuristic was tried: for every row, compare how textually similar
+`cleaned_university`/`cleaned_program` are to the raw source field, and
+"correct" low-similarity rows by re-running post-processing directly on the
+raw field. This did catch a few more real canon-collision bugs (e.g.
+`"McGill University"` mistakenly appearing for a `"McMaster University"`
+row), but it also **broke correct results**: legitimate abbreviation
+expansions like `"NYU"` -> `"New York University"` and
+`"UCLA"` -> `"University of California, Los Angeles"` got reverted to
+badly-cased abbreviations (`"Nyu"`, `"Ucla"`), because a *good* expansion is
+supposed to look different from its raw abbreviated input -- that dissimilarity
+isn't a bug signal, it's the point. This pass was reverted in full (the
+pre-LLM-output cache made that safe/cheap -- see `standardize_names()`'s
+resumability) rather than shipped with unverified regressions. Only the
+narrowly-confirmed Michigan/Milan pattern was actually fixed.
+
+**Known remaining imperfections** (documented rather than chased further,
+given the above lesson about automated "fixes" introducing their own bugs):
+- The tiny local LLM sometimes introduces its own typos when generating a
+  standardized name, independent of canonical-list matching -- observed
+  examples: `"Religion"` -> `"Religiion"`, `"Library And Information
+  Science"` -> `"Librarry And Information Science"`, `"Mathematics and
+  Statistics"` -> `"Mathematicas And Statistics"`, `"Sociocultural
+  Anthropology"` -> `"Sociocultuural Anthropology"`.
+- It occasionally drops real information: `"Civil, Construction,
+  Environmental Engineering"` -> `"Civil"`.
+- It occasionally shifts to a different (wrong) field entirely:
+  `"Computer Science and Engineering"` -> `"Computational Science and
+  Engineering"`.
+- Other canon-list gaps in the same class as Michigan/Milan (a common bare
+  name colliding with an unrelated, shorter canonical entry) likely exist
+  elsewhere in `canon_universities.txt`/`canon_programs.txt` at this scale
+  (1,060 and similarly-sized lists) but weren't individually found and
+  fixed -- only the one confirmed via manual sampling was addressed.
 
 ## Known bugs
 
