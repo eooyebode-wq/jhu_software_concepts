@@ -10,6 +10,7 @@ import urllib.robotparser as robotparser
 
 from bs4 import BeautifulSoup
 from selenium import webdriver
+from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
@@ -93,6 +94,7 @@ POLITE_DELAY_SECONDS = 1.5
 DEFAULT_TARGET_RECORDS = 40_000
 DEFAULT_RAW_PATH = "raw_scrape_progress.jsonl"
 DEFAULT_STATE_PATH = "raw_scrape_state.json"
+MAX_CONSECUTIVE_DRIVER_RETRIES = 5
 
 
 def _load_raw_records(raw_path: str) -> list[dict]:
@@ -138,9 +140,15 @@ def scrape_data(
 
     Resumable: progress is persisted to `raw_path` (one JSON record per line)
     and `state_path` (last-seen pagination cursor) after every page, so if the
-    process crashes, is rate-limited, or Chrome is closed partway through,
-    rerunning this function picks up where it left off instead of restarting.
-    Both paths are relative by default -- no machine-specific hardcoding.
+    process is rate-limited or Chrome is closed partway through, rerunning
+    this function picks up where it left off instead of restarting. Both
+    paths are relative by default -- no machine-specific hardcoding.
+
+    A crashed Chrome tab/session (observed in practice during long runs) is
+    recovered automatically: a fresh session is re-attached and the same page
+    retried, up to MAX_CONSECUTIVE_DRIVER_RETRIES in a row, before giving up.
+    This only recovers from Chrome's own instability, not from a site
+    block/rate-limit -- any other fetch failure still stops immediately.
     """
     if not _robots_allows("/survey/"):
         raise RuntimeError("robots.txt disallows /survey/ -- refusing to scrape.")
@@ -156,6 +164,7 @@ def scrape_data(
     print(f"Resuming from {total} saved records." if total else "Starting fresh scrape.")
 
     driver = _attach_driver(debugger_address)
+    consecutive_retries = 0
 
     try:
         while url and total < max_records:
@@ -164,10 +173,26 @@ def scrape_data(
 
             try:
                 data = _fetch_page_json(driver, url)
+            except WebDriverException as exc:
+                consecutive_retries += 1
+                if consecutive_retries > MAX_CONSECUTIVE_DRIVER_RETRIES:
+                    print(f"Stopping: {consecutive_retries} consecutive Chrome session failures "
+                          f"at {url} ({exc}). Progress saved -- rerun to resume.")
+                    break
+                print(f"Chrome session error at {url} ({exc}); "
+                      f"re-attaching (retry {consecutive_retries}/{MAX_CONSECUTIVE_DRIVER_RETRIES}).")
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
+                time.sleep(POLITE_DELAY_SECONDS)
+                driver = _attach_driver(debugger_address)
+                continue
             except Exception as exc:
                 print(f"Stopping: page fetch failed for {url} ({exc}). Progress saved -- rerun to resume.")
                 break
 
+            consecutive_retries = 0
             page_records = data["props"]["results"]["data"]
             _append_raw_records(raw_path, page_records)
             total += len(page_records)

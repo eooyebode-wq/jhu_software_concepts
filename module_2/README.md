@@ -197,4 +197,18 @@ logic, known edge cases._
 
 ## Known bugs
 
-_TODO._
+- **Chrome tab crashes during long runs.** Across the full 40,000-record
+  scrape, the attached Chrome tab crashed 5 times total (`Message: tab
+  crashed`), roughly every 7,000-16,000 records. Root cause wasn't pinned
+  down further (not a site block -- robots.txt/Cloudflare were never
+  involved; likely memory pressure from thousands of client-side SPA
+  navigations in one long-lived tab). `scrape_data()` recovers automatically:
+  it re-attaches a fresh Selenium session and retries the same page, up to
+  `MAX_CONSECUTIVE_DRIVER_RETRIES` (5) in a row, before giving up. Combined
+  with the file-based resumability, no manual restarts were needed once this
+  was in place. If it were to exceed 5 consecutive retries (not observed),
+  the script stops cleanly and rerunning it resumes from the saved cursor.
+- **Final run stats**: 40,000/40,000 target records, 0 duplicate URLs, all
+  records have the full 15-key schema, no record fell through the
+  `applicant_status` fallback ("Other") -- every `decision` value GradCafe
+  returned was recognized.
