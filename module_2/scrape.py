@@ -22,18 +22,16 @@ ROBOTS_URL = f"{BASE_URL}/robots.txt"
 SURVEY_URL = f"{BASE_URL}/survey/"
 DEBUGGER_ADDRESS = "127.0.0.1:9222"
 
-# Identify honestly. Never spoof a browser UA or another crawler's name
-# (e.g. ClaudeBot, which robots.txt explicitly disallows) to route around a
-# rule aimed at that identity -- can_fetch() falls back to the "User-agent: *"
-# group for any name not otherwise listed, so this is matched correctly.
+# A made-up but honest name for this scraper. I'm not pretending to be a
+# browser or a different bot here.
 USER_AGENT = "jhu-software-concepts-module2-scraper"
 
 
 def _robots_allows(path: str, user_agent: str = USER_AGENT) -> bool:
     """Check thegradcafe.com/robots.txt before fetching `path`.
 
-    Scoped exception: uses the standard-library urllib.robotparser rather
-    than urllib3, which has no robots.txt parser of its own (see README).
+    Uses Python's built-in robotparser here instead of urllib3, since
+    urllib3 doesn't have a robots.txt reader (see README).
     """
     rp = robotparser.RobotFileParser()
     rp.set_url(ROBOTS_URL)
@@ -54,12 +52,9 @@ def _is_same_site(url: str) -> bool:
 
 
 def _attach_driver(debugger_address: str = DEBUGGER_ADDRESS) -> webdriver.Chrome:
-    """Attach Selenium to an already-open, human-verified Chrome session.
-
-    Never launches a new browser instance -- Cloudflare blocks a freshly
-    launched, Selenium-controlled browser outright. Chrome must already be
-    running with --remote-debugging-port and --remote-allow-origins=* (see
-    README) and have passed Cloudflare's check in that window.
+    """Connect Selenium to a Chrome window that's already open and already
+    past Cloudflare's check, instead of opening a new browser (Chrome has to
+    already be running with --remote-debugging-port, see README).
     """
     options = Options()
     options.debugger_address = debugger_address
@@ -67,15 +62,13 @@ def _attach_driver(debugger_address: str = DEBUGGER_ADDRESS) -> webdriver.Chrome
 
 
 def _fetch_page_json(driver: webdriver.Chrome, url: str) -> dict:
-    """Navigate the trusted session to `url` and return its embedded page data.
+    """Go to `url` and pull out the page's data.
 
-    Uses an in-session fetch() rather than driver.page_source: GradCafe is an
-    Inertia.js SPA whose initial HTML embeds the page's data as JSON in
-    #app[data-page], but React strips that attribute from the live DOM after
-    hydration (confirmed: page_source lacked it, an in-session fetch() of the
-    same URL did not). BeautifulSoup locates the element; json.loads parses
-    the already-extracted attribute string -- no HTML search tool beyond
-    BeautifulSoup/stdlib json is used.
+    The site hides its results as JSON text inside the page's HTML, but that
+    JSON disappears once the page finishes loading in the browser (I checked
+    with driver.page_source and it was gone). So instead I have the browser
+    re-fetch the same page's raw HTML, which still has the JSON in it, and
+    read it from there with BeautifulSoup + json.loads.
     """
     driver.get(url)
     WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.ID, "app")))
@@ -131,24 +124,15 @@ def scrape_data(
     state_path: str = DEFAULT_STATE_PATH,
     debugger_address: str = DEBUGGER_ADDRESS,
 ) -> list[dict]:
-    """Scrape raw applicant entries from The Grad Cafe via an attached Chrome session.
+    """Scrape applicant entries from The Grad Cafe, one page at a time, until
+    `max_records` is reached or the site stops sending a next page.
 
-    Returns a list of raw GradCafe result dicts (one per applicant entry),
-    following cursor-based pagination until `max_records` is reached or the
-    site stops returning a next page. Stops immediately (no retry) if a page
-    fetch fails, treating that as a possible block/rate-limit.
-
-    Resumable: progress is persisted to `raw_path` (one JSON record per line)
-    and `state_path` (last-seen pagination cursor) after every page, so if the
-    process is rate-limited or Chrome is closed partway through, rerunning
-    this function picks up where it left off instead of restarting. Both
-    paths are relative by default -- no machine-specific hardcoding.
-
-    A crashed Chrome tab/session (observed in practice during long runs) is
-    recovered automatically: a fresh session is re-attached and the same page
-    retried, up to MAX_CONSECUTIVE_DRIVER_RETRIES in a row, before giving up.
-    This only recovers from Chrome's own instability, not from a site
-    block/rate-limit -- any other fetch failure still stops immediately.
+    Saves progress to `raw_path` and `state_path` after every page, so if
+    this gets interrupted (rate limit, Chrome closing, etc.), running it
+    again continues from where it stopped instead of starting over. If the
+    Chrome tab itself crashes, it reconnects and tries again automatically
+    (up to MAX_CONSECUTIVE_DRIVER_RETRIES times) before giving up. Any other
+    kind of failure stops the scraper right away instead of retrying.
     """
     if not _robots_allows("/survey/"):
         raise RuntimeError("robots.txt disallows /survey/ -- refusing to scrape.")

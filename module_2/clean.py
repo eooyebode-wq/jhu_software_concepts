@@ -92,21 +92,18 @@ def load_data(path: str) -> list[dict]:
 
 
 def _llm_input_text(record: dict) -> str:
-    """Recombine our already-separated program/university into the single
-    'program, university' string llm_hosting/app.py expects and splits.
+    """Put program and university back into one "program, university" string,
+    since that's the format app.py is built to read.
     """
     parts = [p for p in (record.get("program"), record.get("university")) if p]
     return ", ".join(parts)
 
 
 def _post_process_name(value):
-    """Normalize an llm_hosting output value onto our None convention.
-
-    llm_hosting/app.py's own _post_normalize_program()/_post_normalize_university()
-    already do the abbreviation-fix/canonical-mapping/fuzzy-matching pass described
-    in the assignment -- this only maps its "Unknown"/empty sentinel onto the
-    None convention used everywhere else in this project, rather than
-    reimplementing fuzzy matching a second time.
+    """Turn app.py's "Unknown" or empty result into None, so missing values
+    look the same everywhere in this project. app.py already does its own
+    cleanup (fixing abbreviations, matching known names), so there's no need
+    to redo that here.
     """
     value = (value or "").strip()
     if not value or value.lower() == "unknown":
@@ -115,12 +112,12 @@ def _post_process_name(value):
 
 
 def _start_llm_chunk_process(chunk_input_path: str, chunk_output_path: str, n_threads: int):
-    """Launch llm_hosting/app.py's CLI on a chunk as a background subprocess.
+    """Run app.py on one chunk of records in the background.
 
-    Resumable: if chunk_output_path already has N lines from an earlier,
-    interrupted run, only the remaining rows are (re)submitted, appended to
-    the existing output via --append. Returns None (nothing to do) if the
-    chunk is already fully processed.
+    If chunk_output_path already has some rows in it from an earlier run
+    that got interrupted, only the rows that are still missing get sent
+    through, and they're added onto the existing file. Returns None if this
+    chunk is already done.
     """
     with open(chunk_input_path, "r", encoding="utf-8") as f:
         all_rows = json.load(f)
@@ -159,11 +156,10 @@ def standardize_names(
     n_threads: int = DEFAULT_N_THREADS_PER_WORKER,
     work_dir: str = DEFAULT_LLM_WORK_DIR,
 ) -> list[dict]:
-    """Run records through llm_hosting/app.py (in `n_workers` parallel processes)
-    and return records with cleaned_program/cleaned_university added, preserving
-    every original field untouched. Chunk assignment is fixed by `n_workers`,
-    so resuming an interrupted run requires the same `n_workers` value used to
-    start it.
+    """Run all the records through app.py, split across `n_workers` processes
+    at once, and add cleaned_program/cleaned_university to each one without
+    changing anything else. If you stop this partway through, rerun it with
+    the same `n_workers` number so it can pick up where it left off.
     """
     os.makedirs(work_dir, exist_ok=True)
     chunk_size = math.ceil(len(records) / n_workers)

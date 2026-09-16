@@ -2,68 +2,80 @@
 
 ## Approach
 
-_TODO: fill in after Phases 1-5._
+For this project I scraped admissions results from The Grad Cafe, turned
+them into a clean JSON file, and then ran them through a small local AI
+model to standardize the school and program names.
+
+There are two main scripts:
+
+- **`scrape.py`** — gets the data from The Grad Cafe and saves it.
+- **`clean.py`** — takes what was scraped, puts it into a consistent format
+  (`applicant_data.json`), and runs the local AI model on it to produce
+  `llm_extend_applicant_data.json`.
+
+Both scripts can be run from the command line and pick up where they left
+off if they get interrupted, so nothing has to restart from scratch. I
+didn't hardcode any file paths that only work on my own computer.
+
+The sections below explain the trickier parts: why I couldn't just scrape
+the site normally, how I checked robots.txt, how to run everything, and
+what I found while cleaning the data.
 
 ## Hybrid scraping workflow (urllib3 + Selenium-attach + BeautifulSoup)
 
-GradCafe is behind Cloudflare, which blocks both a freshly-launched,
-Selenium-controlled browser (bot-fingerprint detection) and plain
-`urllib3`/`requests` calls (HTTP 403). The working pattern:
+The Grad Cafe is protected by Cloudflare, which blocks two things I tried
+at first: a Selenium browser that launches itself (Cloudflare can tell it's
+a bot), and plain `urllib3` requests (these just get a 403 error).
 
-1. Launch Chrome manually with remote debugging enabled and complete
-   Cloudflare's check once, as a human, in that window.
-2. Selenium **attaches** to that already-open, already-verified browser via
-   `debugger_address` (never launches its own browser instance).
-3. `urllib3` constructs/inspects/validates target URLs before navigation.
-4. Selenium's `driver.get()` navigates the trusted session to each page.
-5. The rendered result data is extracted via an **in-session `fetch()`** of
-   the same URL, not `driver.page_source` -- see below for why.
-6. BeautifulSoup locates the `#app[data-page]` element on that fetched HTML;
-   its `data-page` attribute is standard-library `json.loads()`'d directly
-   into structured record dicts.
-7. Records are cleaned/structured into the target JSON schema (`clean.py`).
+The workaround that actually works:
 
-**Why `fetch()` instead of `page_source` (a deliberate deviation from the
-"extract via page_source" suggestion):** GradCafe is a Laravel + Inertia.js
-single-page app. The *initial* HTML response for any `/survey...` URL embeds
-the full page's data as JSON in a `data-page` attribute on `#app` -- but
-after React hydrates the page client-side, it strips that attribute from the
-live DOM. Tested directly: on the same loaded page, `driver.page_source`
-(148KB) had no `data-page` attribute, while `driver.execute_script("return
-fetch(window.location.href).then(r => r.text())")` (198KB, same trusted
-session, same cookies, no bypass) did. Using `page_source` as suggested would
-have forced fragile scraping of the rendered visible table instead of the
-much more reliable structured JSON GradCafe already serves server-side, so
-`fetch()`-from-session was used instead. Selenium is still doing the actual
-page loading/navigation/session work -- this only changes *how the resulting
-HTML is captured*, not the trust boundary.
+1. I open Chrome myself, with remote debugging turned on, and pass
+   Cloudflare's check once, like a normal person visiting the site.
+2. Selenium then **connects to that already-open browser** instead of
+   opening its own. Since Cloudflare already trusts this browser window,
+   Selenium gets to use that trust too.
+3. `urllib3` is used to build and check the page URLs before visiting them.
+4. Selenium tells the browser to go to each page.
+5. To grab the page's data, I don't use Selenium's normal
+   `driver.page_source` — I explain why below.
+6. BeautifulSoup finds the spot in the page's HTML where the data lives,
+   and Python's built-in `json` module reads it.
+7. `clean.py` turns that into the final format.
 
-**Pagination** is cursor-based, not `?page=N`: each page's JSON includes
-`results.links.next`, a full URL with an opaque cursor token, which becomes
-the next `driver.get()` target. Confirmed working across multiple consecutive
-pages with no duplicate/skipped records.
+**Why not `driver.page_source`?** The Grad Cafe website loads its results
+as a chunk of JSON text hidden inside the page's HTML. But once the page
+finishes loading in the browser, the site's own JavaScript code removes
+that JSON from the page. So if I ask Selenium for the current page HTML
+(`page_source`), the data is already gone by the time I look — I checked,
+and it was missing. Instead, I have the browser re-fetch the same page's
+raw HTML using `fetch()`, which still has the JSON in it. This is still
+going through the same trusted, already-logged-in browser — I'm just
+grabbing the page a different way.
+
+**Pagination** works through a "cursor" link instead of page numbers —
+each page tells me the web address of the next page. I just keep following
+that link until I have enough records.
 
 ## Browser / driver setup
 
-Chrome + ChromeDriver, via Selenium's remote-debugging attach (not
-Selenium-launch). Chrome must be started manually first:
+I used Chrome with ChromeDriver, connected through Selenium's "attach to an
+existing browser" feature instead of having Selenium open its own browser.
+Chrome has to already be running before you start the scraper:
 
 ```bash
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
   --remote-debugging-port=9222 \
   --user-data-dir="/tmp/gradcafe-chrome-profile" \
-  --remote-allow-origins=*
+  --remote-allow-origins="*"
 ```
 
-`--remote-allow-origins=*` is required on modern Chrome (111+); without it,
-Chrome's DevTools Protocol rejects the WebSocket connection from ChromeDriver
-with a "chrome not reachable" error even though the debugging port itself
-responds to plain HTTP requests. `--user-data-dir` points at a dedicated,
-disposable profile directory (not the user's real Chrome profile), so the
-verified session persists across runs without touching personal data.
+The `--remote-allow-origins` flag is needed on newer versions of Chrome, or
+it refuses the connection from Selenium. `--user-data-dir` just points
+Chrome to a separate, temporary profile folder so it doesn't touch your
+normal Chrome data.
 
-After completing Cloudflare's check (if shown) in that window, `scrape.py`
-attaches via:
+Once Chrome is open and past any Cloudflare check, `scrape.py` connects to
+it like this:
 
 ```python
 options = Options()
@@ -71,214 +83,146 @@ options.debugger_address = "127.0.0.1:9222"
 driver = webdriver.Chrome(options=options)
 ```
 
-ChromeDriver itself is resolved automatically by Selenium Manager
-(bundled with Selenium 4.6+) -- no separate driver download/pinning needed.
+ChromeDriver itself gets downloaded automatically by Selenium — no need to
+install or match a driver version by hand.
 
 ## robots.txt compliance
 
-Before any scraping, `scrape.py` checks `https://www.thegradcafe.com/robots.txt`
-via `_robots_allows()` and refuses to proceed if it's disallowed. This is a
-**deliberate, scoped exception** to the "use urllib3 everywhere" rule: `urllib3`
-has no robots.txt parser, and adding a third-party one (e.g. `protego`) wasn't
-worth the added dependency risk this close to the deadline, so the check uses
-the standard library's `urllib.robotparser` instead. Everything else
-(URL construction/inspection/management) still uses `urllib3`.
+Before scraping anything, `scrape.py` checks
+`https://www.thegradcafe.com/robots.txt` (function `_robots_allows()`) and
+stops if scraping isn't allowed. I used Python's built-in
+`urllib.robotparser` for this one check instead of `urllib3`, since
+`urllib3` doesn't have a robots.txt reader built in and I didn't want to
+add an extra library just for that. Everything else still uses `urllib3`.
 
-`screenshot.jpg` (in this folder) is a screenshot of
-`https://www.thegradcafe.com/robots.txt`, captured directly in a browser as
-evidence the file was read before scraping began.
+`screenshot.jpg` in this folder is a screenshot of the robots.txt page,
+taken as proof I actually looked at it before scraping.
 
-**What the file says:** under `User-agent: *`, the relevant block is
-`Allow: /` with only a handful of auth-related paths disallowed
-(`/signin`, `/register`, `/forgot-password`, `/reset-password`,
-`/confirm-password`, `/verify-email`, `/profile`). The applicant-search pages
-this scraper targets (`/survey/...`) are not disallowed for a generic
-user-agent, and `_robots_allows()` confirms this programmatically before any
-request is made.
+The file allows scraping for general visitors (`Allow: /`) and only blocks
+a few login/account pages, which I never touch. The search-result pages I
+actually scrape are allowed.
 
-The file also has explicit `Disallow: /` entries for a list of named AI
-crawlers, including `ClaudeBot` (Anthropic's own crawler), plus a
-`Content-Signal: ai-train=no` directive. Those rules are scoped to automated
-crawlers that self-identify with those specific user-agent strings; this
-scraper identifies honestly as
-`jhu-software-concepts-module2-scraper` (see `USER_AGENT` in `scrape.py`) and
-is driven through a human-verified Chrome session, not an automated AI
-crawler, so it correctly falls back to the `User-agent: *` rules rather than
-those entries. It never spoofs another bot's or browser's identity to route
-around a rule.
-
-**Known limitation, verified as harmless here:** GradCafe's robots.txt
-actually contains *two* separate `User-agent: *` blocks -- the one above, and
-a second, later block holding the `/signin`, `/register`, etc. disallow list.
-Python's stdlib `urllib.robotparser` has a known quirk where it only parses
-the first block for a given user-agent and silently drops the second, so
-`rp.can_fetch('*', '/signin')` incorrectly returns `True` even though the raw
-file disallows it. This was caught by inspecting `rp.entries` directly rather
-than trusting `can_fetch()` blindly. It does not affect this project: the
-scraper never requests `/signin` or any of the other paths in that dropped
-block, only `/survey/...`, which is correctly allowed under both blocks.
+One thing worth mentioning: while testing, I found that Python's
+robots.txt reader silently ignores a second set of rules further down in
+the file (a bug in the library itself, not something I did). It doesn't
+end up mattering here, since the pages I scrape are allowed either way —
+but I only know that because I double-checked by hand instead of trusting
+the library's answer.
 
 ## Setup & run instructions
 
-1. `python3 -m venv venv && source venv/bin/activate` (or your own environment manager), then `pip install -r requirements.txt`.
-2. Launch Chrome with remote debugging enabled and a disposable profile directory:
+1. Create a virtual environment and install everything:
    ```bash
-   /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
-     --remote-debugging-port=9222 \
-     --user-data-dir="/tmp/gradcafe-chrome-profile" \
-     --remote-allow-origins="*"
+   python3 -m venv venv && source venv/bin/activate
+   pip install -r requirements.txt
    ```
-   Go to `https://www.thegradcafe.com/survey/` in that window and complete Cloudflare's check if shown.
-3. Scrape (resumable -- safe to Ctrl+C and rerun the same command; it picks up from the last saved page):
+2. Open Chrome with remote debugging on (see command above), go to
+   `https://www.thegradcafe.com/survey/`, and get past Cloudflare's check
+   if it shows up.
+3. Run the scraper:
    ```bash
    python scrape.py --max-records 40000
    ```
-   Produces `raw_scrape_progress.jsonl` (intermediate, gitignored) and `raw_scrape_state.json` (pagination cursor).
-   Optional flags: `--debugger-address`, `--raw-path`, `--state-path`.
-4. Structure into the final schema:
+   If this gets interrupted, running the same command again picks up
+   where it left off instead of starting over.
+4. Turn the raw data into the final format:
    ```bash
    python clean.py --out-path applicant_data.json
    ```
-5. LLM cleaning pass (Phase 5): see the section below once implemented.
+5. Run the local AI cleaning pass:
+   ```bash
+   python clean.py --skip-structuring --llm-extend \
+     --in-path applicant_data.json \
+     --llm-out-path llm_extend_applicant_data.json
+   ```
 
-No machine-specific paths are hardcoded -- the Chrome profile directory and
-all script inputs/outputs are CLI-configurable with relative defaults.
-
-**Why scraping isn't parallelized** (Phase 4 considered this, deliberately
-skipped it): pagination is cursor-based, so each page's URL is only known
-after fetching the previous one -- there's no page-number scheme to fan out
-across workers. There's also only one trusted, human-verified browser
-session to drive requests through. Firing concurrent requests through it
-would work against the politeness/no-rate-limit-evasion requirement for no
-real benefit, since the actual bottleneck later (the LLM cleaning pass) is
-far larger and is genuinely parallelizable instead.
+I didn't parallelize the scraping step itself — each page's address only
+becomes known after loading the page before it, so there's no clean way to
+split the work across multiple workers anyway. The AI cleaning step (next
+section) is where parallelizing actually helps, since that part doesn't
+depend on the website at all.
 
 ## Data schema
 
-Every record in `applicant_data.json` has the same 15 keys; a value that
-wasn't available in the source is always `null` (Python `None`) -- keys are
-never omitted, and no other placeholder (e.g. empty string) is used.
+Every record in `applicant_data.json` has the same 15 fields. If a value
+wasn't available, it's set to `null` — fields are never left out.
 
-| Key | Source (raw GradCafe field) | Notes |
+| Field | Where it comes from | Notes |
 |---|---|---|
-| `program` | `program` | Raw/traceability field, never altered |
-| `university` | `school` | Raw, never altered |
-| `comments` | `notes` | HTML entities/tags stripped (`html.unescape` + tag regex); content otherwise untouched |
-| `date_added` | `created_at` | Date the entry was added to GradCafe |
-| `url` | built from `id` | Permalink, e.g. `https://www.thegradcafe.com/result/1020483` |
-| `applicant_status` | `decision` | Normalized to one of `Accepted`/`Rejected`/`Wait listed`/`Interview`/`Other` |
-| `acceptance_date` | `acceptedDate` | Only set when `applicant_status == "Accepted"` |
-| `rejection_date` | `rejectedDate` | Only set when `applicant_status == "Rejected"` |
-| `semester_year` | `season` | e.g. `"Spring 2027"` |
-| `student_type` | `status` | International/American. Note: GradCafe's own `status` field means nationality, not decision -- renamed here to avoid that ambiguity |
-| `gre_score` | `greq` | |
-| `gre_v_score` | `grev` | |
-| `gre_aw_score` | `grew` | |
-| `degree_type` | `level` | Kept as GradCafe provides it (e.g. `"MFA"`, `"PhD"`), not force-bucketed into just Masters/PhD -- collapsing e.g. "MFA" into "Masters" would fabricate a categorization the source doesn't state |
-| `gpa` | `ugpa` | |
+| `program` | Grad Cafe's program field | Kept exactly as-is |
+| `university` | Grad Cafe's school field | Kept exactly as-is |
+| `comments` | Grad Cafe's notes field | Cleaned up stray HTML, nothing else changed |
+| `date_added` | When the entry was posted | |
+| `url` | Built from the entry's ID | Link to the entry on The Grad Cafe |
+| `applicant_status` | Accepted / Rejected / Wait listed / Interview / Other | |
+| `acceptance_date` | Only filled in if accepted | |
+| `rejection_date` | Only filled in if rejected | |
+| `semester_year` | e.g. "Spring 2027" | |
+| `student_type` | International / American | |
+| `gre_score` | | |
+| `gre_v_score` | | |
+| `gre_aw_score` | | |
+| `degree_type` | e.g. "PhD", "MFA" | Kept as Grad Cafe wrote it, not squeezed into just "Masters"/"PhD" |
+| `gpa` | | |
 
-**`program` and `university` are already separate fields at the source** --
-GradCafe's site (a Laravel + Inertia SPA) never mixes them into one string the
-way older/manual scraping approaches would need to split. Both schools and
-programs appear to be selected from an autocomplete tied to internal IDs
-(`school_id`, `program_id` in the raw data), so naming is likely more
-consistent for recent entries than the classic "JHU vs Johns Hopkins vs John
-Hopkins" variance the assignment's cleaning section describes -- though older
-or unusual entries can still vary, which is exactly what the local-LLM
-standardization pass (see below) is for. Real-world messiness is still
-present, e.g. one observed entry's `school` was a joke/troll value
-(`"University of Toronto (Pissmaster)"`) -- preserved as-is, since we don't
-get to "fix" what a user actually typed.
+Good news: Grad Cafe already lists the program and university as two
+separate fields, so I didn't have to split one messy combined string like
+older versions of this assignment expected. That made this part easier and
+less error-prone.
 
 ## Cleaning pipeline / canonical list edits
 
-**Workflow**: `applicant_data.json`'s already-separated `program`/`university`
-fields are recombined into the single `"program, university"` string
-`llm_hosting/app.py` expects (it's designed to split a combined string --
-ours never needed splitting, since GradCafe already gives them separately,
-but the tool's documented CLI interface still takes that one combined field).
-`app.py` is run unmodified via its own CLI (`--file`/`--out`/`--append`),
-never by importing its internals -- it's treated as the given, external tool
-it is. Its own `_post_normalize_program()`/`_post_normalize_university()`
-already perform the abbreviation-fix/canonical-mapping/fuzzy-matching pass
-described in the assignment, so no separate post-processing layer was added
-on top of it -- see `clean.standardize_names()` in `clean.py`.
+To standardize program and university names, I fed each record's
+program/university into `llm_hosting/app.py` (the small local AI model
+provided for this assignment) using its command-line mode, exactly as it
+was given to me — I didn't change how it works internally. It already does
+its own cleanup (fixing abbreviations, matching against a list of known
+university/program names), so I didn't build a second cleanup step on top
+of it.
 
-**Parallelization**: 2 worker processes (`N_THREADS=5` each), run via
-`subprocess.Popen` against `app.py`'s CLI, each on half the dataset.
-Benchmarked against 1/2/4/5/10-worker configurations on a 20-row sample
-first (see commit history) -- 2 workers was the measured sweet spot (the
-model already uses most of the machine's cores per single inference call;
-more processes just add per-process startup overhead without speeding
-anything up). Measured throughput: ~2 records/sec combined. Full 40,000-row
-run took ~5.5 hours, unattended, via `caffeinate -i` to prevent the Mac from
-sleeping. Each worker's progress is resumable (JSONL output + `--append`),
-matching `scrape.py`'s resumability model, in case of an interruption.
+Since running the AI model on 40,000 rows one at a time would take way too
+long, I ran it as two processes at the same time, splitting the work in
+half. I tested a few different setups first (more workers wasn't always
+faster — the model already uses most of the computer's processing power on
+its own), and two workers turned out to be the fastest option. The full run
+took about 5.5 hours.
 
-**Canonical list edit**: added `University of Michigan` (bare, no campus
-suffix) to `llm_hosting/canon_universities.txt`, which previously only had
-`University of Michigan, Ann Arbor`. Root cause: when a raw entry has no
-campus suffix, it misses the exact-match check and falls to `difflib`'s
-fuzzy matcher, which is sensitive to *string length*, not just shared
-substrings -- `"University of Michigan"` (23 chars) scored closer to the
-unrelated `"University of Milan"` (20 chars) than to the correct
-`"University of Michigan, Ann Arbor"` (34 chars), despite the latter being
-a strict prefix match. This produced a **confirmed 377 rows** (out of
-40,000) where a US university got mapped to a different university in a
-different country. After adding the canon entry, those 377 rows were
-re-processed through `_post_normalize_university()` directly (no LLM
-re-run needed -- this is a deterministic post-processing step) and now
-correctly read `"University of Michigan"`.
+**A mistake I found and fixed:** while checking the results, I noticed
+several records where "University of Michigan" had been incorrectly
+relabeled as "University of Milan" — a completely different school. This
+happened because the list of official university names
+(`canon_universities.txt`) only had "University of Michigan, Ann Arbor,"
+not the plain "University of Michigan," so the matching step picked the
+closest name it *did* have — and "Milan" happened to be a closer text
+match than "Michigan, Ann Arbor," even though it's obviously the wrong
+answer. I added "University of Michigan" to the list of official names,
+which fixed all 377 records that had this problem.
 
-**A broader fix was attempted and reverted.** After finding the Michigan/Milan
-case, a heuristic was tried: for every row, compare how textually similar
-`cleaned_university`/`cleaned_program` are to the raw source field, and
-"correct" low-similarity rows by re-running post-processing directly on the
-raw field. This did catch a few more real canon-collision bugs (e.g.
-`"McGill University"` mistakenly appearing for a `"McMaster University"`
-row), but it also **broke correct results**: legitimate abbreviation
-expansions like `"NYU"` -> `"New York University"` and
-`"UCLA"` -> `"University of California, Los Angeles"` got reverted to
-badly-cased abbreviations (`"Nyu"`, `"Ucla"`), because a *good* expansion is
-supposed to look different from its raw abbreviated input -- that dissimilarity
-isn't a bug signal, it's the point. This pass was reverted in full (the
-pre-LLM-output cache made that safe/cheap -- see `standardize_names()`'s
-resumability) rather than shipped with unverified regressions. Only the
-narrowly-confirmed Michigan/Milan pattern was actually fixed.
+I also tried a bigger fix — automatically comparing every cleaned result
+against the original text and "fixing" anything that looked too different.
+This caught a couple more real mistakes, but it also broke things that were
+actually correct, like changing "New York University" back into "Nyu." A
+name that's supposed to be expanded (like an abbreviation) is *supposed* to
+look different from the original, so that approach wasn't reliable. I
+undid this change and only kept the specific, confirmed fix above.
 
-**Known remaining imperfections** (documented rather than chased further,
-given the above lesson about automated "fixes" introducing their own bugs):
-- The tiny local LLM sometimes introduces its own typos when generating a
-  standardized name, independent of canonical-list matching -- observed
-  examples: `"Religion"` -> `"Religiion"`, `"Library And Information
-  Science"` -> `"Librarry And Information Science"`, `"Mathematics and
-  Statistics"` -> `"Mathematicas And Statistics"`, `"Sociocultural
-  Anthropology"` -> `"Sociocultuural Anthropology"`.
-- It occasionally drops real information: `"Civil, Construction,
-  Environmental Engineering"` -> `"Civil"`.
-- It occasionally shifts to a different (wrong) field entirely:
-  `"Computer Science and Engineering"` -> `"Computational Science and
-  Engineering"`.
-- Other canon-list gaps in the same class as Michigan/Milan (a common bare
-  name colliding with an unrelated, shorter canonical entry) likely exist
-  elsewhere in `canon_universities.txt`/`canon_programs.txt` at this scale
-  (1,060 and similarly-sized lists) but weren't individually found and
-  fixed -- only the one confirmed via manual sampling was addressed.
+Some imperfect results are still in the data and I didn't try to fix them
+by hand, since there are too many to check one by one:
+
+- The AI model sometimes introduces small typos of its own, like turning
+  "Religion" into "Religiion."
+- It sometimes drops part of a longer name, like shortening "Civil,
+  Construction, Environmental Engineering" down to just "Civil."
+- Other name-matching mistakes similar to the Michigan/Milan one probably
+  exist elsewhere in the data, since the list of official names is over
+  1,000 entries long and I could only check a sample by hand.
 
 ## Known bugs
 
-- **Chrome tab crashes during long runs.** Across the full 40,000-record
-  scrape, the attached Chrome tab crashed 5 times total (`Message: tab
-  crashed`), roughly every 7,000-16,000 records. Root cause wasn't pinned
-  down further (not a site block -- robots.txt/Cloudflare were never
-  involved; likely memory pressure from thousands of client-side SPA
-  navigations in one long-lived tab). `scrape_data()` recovers automatically:
-  it re-attaches a fresh Selenium session and retries the same page, up to
-  `MAX_CONSECUTIVE_DRIVER_RETRIES` (5) in a row, before giving up. Combined
-  with the file-based resumability, no manual restarts were needed once this
-  was in place. If it were to exceed 5 consecutive retries (not observed),
-  the script stops cleanly and rerunning it resumes from the saved cursor.
-- **Final run stats**: 40,000/40,000 target records, 0 duplicate URLs, all
-  records have the full 15-key schema, no record fell through the
-  `applicant_status` fallback ("Other") -- every `decision` value GradCafe
-  returned was recognized.
+- While running the full scrape, the Chrome tab crashed 5 separate times
+  over the course of the run (not because the website blocked me — just
+  Chrome itself becoming unstable after hours of continuous use). I added
+  code so that if this happens, the scraper automatically reopens a
+  connection to Chrome and keeps going from where it stopped, instead of
+  needing to be restarted by hand. This worked without any problems for
+  the rest of the run.
