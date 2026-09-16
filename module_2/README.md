@@ -1,5 +1,14 @@
 # Module 2 — Grad Cafe Web Scraper
 
+## Name
+
+Emmanuel Oyebode, JHED ID: eooyebod1
+
+## Module Info
+
+Module 2 - Assignment: Web Scraping
+Due: 09/13/2026
+
 ## Approach
 
 For this project I scraped admissions results from The Grad Cafe, turned
