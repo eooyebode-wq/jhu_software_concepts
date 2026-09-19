@@ -10,3 +10,11 @@ module_2/scrape_run.log
 module_2/llm_clean_run.log
 module_2/_llm_work/
 module_2/llm_hosting/models/
+
+# module_3
+.env
+*.env
+.venv/
+*.sql
+*.dump
+module_3/screenshots_work/
