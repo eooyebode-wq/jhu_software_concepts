@@ -62,6 +62,21 @@ def to_float(value):
         return None
 
 
+def to_score(value, low, high):
+    """Like to_float, but zero and values outside low..high become None.
+
+    The source uses 0 when a score was left blank, and some people enter
+    scores on a different scale (old GRE scores, GPAs out of 10), so those
+    are treated as missing instead of being averaged in.
+    """
+    number = to_float(value)
+    if number is None or number == 0:
+        return None
+    if number < low or number > high:
+        return None
+    return number
+
+
 def get_p_id(url):
     """Use the entry number at the end of the url as the id."""
     if not url:
@@ -110,10 +125,10 @@ def make_row(record):
         clean_text(record.get("applicant_status")),
         clean_text(record.get("semester_year")),
         make_nationality(record.get("student_type")),
-        to_float(record.get("gpa")),
-        to_float(record.get("gre_score")),
-        to_float(record.get("gre_v_score")),
-        to_float(record.get("gre_aw_score")),
+        to_score(record.get("gpa"), 0, 4.0),
+        to_score(record.get("gre_score"), 130, 170),
+        to_score(record.get("gre_v_score"), 130, 170),
+        to_score(record.get("gre_aw_score"), 0, 6.0),
         clean_text(record.get("degree_type")),
         clean_text(record.get("cleaned_program")),
         clean_text(record.get("cleaned_university")),
