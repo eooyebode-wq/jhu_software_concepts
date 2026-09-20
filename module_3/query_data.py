@@ -99,6 +99,40 @@ WHERE term ILIKE 'fall 2026'
 """
 
 
+# Q10 (my own): average GRE Quantitative for American vs International
+Q10_SQL = r"""
+SELECT us_or_international,
+       COUNT(gre),
+       ROUND(AVG(gre)::numeric, 2)
+FROM applicants
+WHERE (us_or_international ILIKE 'american'
+       OR us_or_international ILIKE 'international')
+  AND gre IS NOT NULL
+GROUP BY us_or_international
+ORDER BY us_or_international;
+"""
+
+# Q11 (my own): average GPA of accepted vs rejected Fall 2026 applicants
+Q11_SQL = r"""
+SELECT status,
+       COUNT(gpa),
+       ROUND(AVG(gpa)::numeric, 2)
+FROM applicants
+WHERE term ILIKE 'fall 2026'
+  AND (status ILIKE 'accepted' OR status ILIKE 'rejected')
+  AND gpa IS NOT NULL
+GROUP BY status
+ORDER BY status;
+"""
+
+
+def fetch_all(conn, sql):
+    """Run a query and give back every row it returns."""
+    with conn.cursor() as cur:
+        cur.execute(sql)
+        return cur.fetchall()
+
+
 def fetch_row(conn, sql):
     """Run a query that returns one row and give that row back."""
     with conn.cursor() as cur:
@@ -142,6 +176,8 @@ def main():
             q7 = fetch_value(conn, Q7_SQL)
             q8 = fetch_value(conn, Q8_SQL)
             q9 = fetch_value(conn, Q9_SQL)
+            q10_rows = fetch_all(conn, Q10_SQL)
+            q11_rows = fetch_all(conn, Q11_SQL)
     except psycopg.Error as err:
         print(f"Database error: {err}")
         return
@@ -162,6 +198,14 @@ def main():
     print(f"    Original-field count: {show_count(q8)}")
     print(f"    LLM-field count: {show_count(q9)}")
     print(f"    Difference: {q9 - q8:+,}")
+
+    print("Q10. Average GRE Quantitative by nationality")
+    for group, how_many, average in q10_rows:
+        print(f"    {group}: {show_average(average)} ({show_count(how_many)} applicants)")
+
+    print("Q11. Average GPA by decision, Fall 2026")
+    for decision, how_many, average in q11_rows:
+        print(f"    {decision}: {show_average(average)} ({show_count(how_many)} applicants)")
 
 
 if __name__ == "__main__":
