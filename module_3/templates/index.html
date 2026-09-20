@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block content %}
+  <p class="intro">
+    Results from applicant entries collected from The Grad Cafe and stored in PostgreSQL.
+  </p>
+
+  {% if error %}
+    <div class="message error">{{ error }}</div>
+  {% endif %}
+
+  <section class="cards">
+    {% for q in questions %}
+      <article class="card{% if q.mine %} mine{% endif %}">
+        <h2>
+          Question {{ q.number }}
+          {% if q.mine %}<span class="tag">My question</span>{% endif %}
+        </h2>
+        <p class="question">{{ q.question }}</p>
+        <ul class="answers">
+          {% for line in q.answers %}
+            <li>{{ line }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+    {% endfor %}
+  </section>
+{% endblock %}
