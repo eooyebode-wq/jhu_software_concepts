@@ -1,12 +1,34 @@
 """Flask page that shows the Grad Cafe analysis results."""
 
-from flask import Flask, render_template
+import os
+import subprocess
+import sys
+import threading
+
+from flask import Flask, redirect, render_template, request, url_for
 from sqlalchemy.exc import SQLAlchemyError
 
 import orm_queries as oq
 from models import Applicant, Session
 
 app = Flask(__name__)
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PULL_LOG = os.path.join(BASE_DIR, "pull_data.log")
+
+# Only one pull may run at a time. The running process is remembered here in
+# memory, so run the app as one process (python app.py).
+pull_state = {"process": None, "result": None}
+pull_lock = threading.Lock()
+
+STATUS_MESSAGES = {
+    "started": ("info", "Pull Data started. New entries are being retrieved. "
+                        "This may take a while, and you can keep using this page."),
+    "busy": ("warning", "A data pull is already running, so a new one was not started."),
+    "updated": ("success", "Analysis updated with the latest data in the database."),
+    "update_busy": ("warning", "New data is currently being retrieved. Update Analysis "
+                               "did not interrupt it. Try again when the pull finishes."),
+}
 
 
 def build_questions():
@@ -110,6 +132,36 @@ def build_questions():
     ]
 
 
+def read_pull_result(exit_code):
+    """Turn the finished pull's log file into a message for the page."""
+    try:
+        with open(PULL_LOG, "r", encoding="utf-8") as log:
+            lines = [line.strip() for line in log if line.strip()]
+    except OSError:
+        lines = []
+
+    for line in reversed(lines):
+        if exit_code == 0 and line.startswith("DONE:"):
+            return {"kind": "success", "text": "Pull finished. " + line[5:].strip().capitalize()}
+        if line.startswith("ERROR:"):
+            reason = line[6:].strip()
+            return {"kind": "error", "text": "Pull failed. " + reason[:1].upper() + reason[1:]}
+    return {"kind": "error", "text": "The pull stopped unexpectedly. Check that Chrome is open."}
+
+
+def pull_is_running():
+    """True while a pull is running. Records the result once it has finished."""
+    process = pull_state["process"]
+    if process is None:
+        return False
+    exit_code = process.poll()
+    if exit_code is None:
+        return True
+    pull_state["result"] = read_pull_result(exit_code)
+    pull_state["process"] = None
+    return False
+
+
 @app.route("/")
 def index():
     try:
@@ -118,7 +170,47 @@ def index():
     except SQLAlchemyError:
         questions = []
         error = "The database could not be reached. Make sure PostgreSQL is running."
-    return render_template("index.html", questions=questions, error=error)
+
+    running = pull_is_running()
+    status = request.args.get("status")
+    message = STATUS_MESSAGES.get(status)
+    # These messages are about a pull that is in progress, so drop them once
+    # it has finished.
+    if not running and status in ("started", "busy", "update_busy"):
+        message = None
+    return render_template(
+        "index.html",
+        questions=questions,
+        error=error,
+        running=running,
+        message=message,
+        pull_result=pull_state["result"],
+    )
+
+
+@app.route("/pull", methods=["POST"])
+def pull():
+    """Start a pull in a separate process, unless one is already running."""
+    with pull_lock:
+        if pull_is_running():
+            return redirect(url_for("index", status="busy"))
+        pull_state["result"] = None
+        with open(PULL_LOG, "w", encoding="utf-8") as log:
+            pull_state["process"] = subprocess.Popen(
+                [sys.executable, "pull_data.py"],
+                cwd=BASE_DIR,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+            )
+    return redirect(url_for("index", status="started"))
+
+
+@app.route("/update", methods=["POST"])
+def update():
+    """Reload the results. This never starts a scrape."""
+    if pull_is_running():
+        return redirect(url_for("index", status="update_busy"))
+    return redirect(url_for("index", status="updated"))
 
 
 if __name__ == "__main__":

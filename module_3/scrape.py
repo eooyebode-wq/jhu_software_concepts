@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import urllib.request
 import urllib.robotparser as robotparser
 
 from bs4 import BeautifulSoup
@@ -34,8 +35,12 @@ def _robots_allows(path: str, user_agent: str = USER_AGENT) -> bool:
     urllib3 doesn't have a robots.txt reader (see README).
     """
     rp = robotparser.RobotFileParser()
-    rp.set_url(ROBOTS_URL)
-    rp.read()
+    # rp.read() sends Python's default user agent, which the site answers with
+    # a 403, and robotparser treats a 403 as "everything is disallowed". So the
+    # file is fetched here with this scraper's own user agent and passed in.
+    request = urllib.request.Request(ROBOTS_URL, headers={"User-Agent": user_agent})
+    with urllib.request.urlopen(request, timeout=15) as response:
+        rp.parse(response.read().decode("utf-8").splitlines())
     url = path if path.startswith("http") else BASE_URL + path
     return rp.can_fetch(user_agent, url)
 

@@ -18,3 +18,4 @@ module_2/llm_hosting/models/
 *.sql
 *.dump
 module_3/screenshots_work/
+module_3/pull_data.log
