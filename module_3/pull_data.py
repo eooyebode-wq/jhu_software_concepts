@@ -17,6 +17,10 @@ from clean import clean_data
 from db_config import get_connection
 from load_data import create_table, insert_rows, make_row
 
+# The Module 2 scraper helpers start with an underscore, but they are reused
+# here on purpose instead of copying them.
+# pylint: disable=protected-access
+
 # Safety limit so a pull can never run forever.
 MAX_PAGES = 200
 

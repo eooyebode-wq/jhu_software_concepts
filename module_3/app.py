@@ -31,7 +31,7 @@ STATUS_MESSAGES = {
 }
 
 
-def build_questions():
+def build_questions():  # pylint: disable=too-many-locals
     """Ask the database every question and return the answers as text."""
     with Session() as session:
         q1 = oq.fall_2026_count(session)
@@ -70,7 +70,10 @@ def build_questions():
         },
         {
             "number": 2,
-            "question": "Among entries that give a nationality, what percentage are international students?",
+            "question": (
+                "Among entries that give a nationality, what percentage are "
+                "international students?"
+            ),
             "answers": [f"Percent international: {oq.show_percent(q2)}"],
         },
         {
@@ -100,12 +103,20 @@ def build_questions():
         },
         {
             "number": 7,
-            "question": "How many entries are Johns Hopkins University master's Computer Science applicants?",
-            "answers": [f"Johns Hopkins master's Computer Science entries: {oq.show_count(q7)}"],
+            "question": (
+                "How many entries are Johns Hopkins University master's "
+                "Computer Science applicants?"
+            ),
+            "answers": [
+                f"Johns Hopkins master's Computer Science entries: {oq.show_count(q7)}"
+            ],
         },
         {
             "number": 8,
-            "question": "How many Fall 2026 entries are acceptances for a PhD in Computer Science at Georgetown, MIT, Stanford or Carnegie Mellon?",
+            "question": (
+                "How many Fall 2026 entries are acceptances for a PhD in Computer "
+                "Science at Georgetown, MIT, Stanford or Carnegie Mellon?"
+            ),
             "answers": [f"Original-field count: {oq.show_count(q8)}"],
         },
         {
@@ -119,13 +130,19 @@ def build_questions():
         },
         {
             "number": 10,
-            "question": "Do international applicants report a higher average GRE Quantitative score than American applicants?",
+            "question": (
+                "Do international applicants report a higher average GRE "
+                "Quantitative score than American applicants?"
+            ),
             "answers": q10_answers,
             "mine": True,
         },
         {
             "number": 11,
-            "question": "For Fall 2026, is the average GPA of accepted applicants higher than that of rejected applicants?",
+            "question": (
+                "For Fall 2026, is the average GPA of accepted applicants higher "
+                "than that of rejected applicants?"
+            ),
             "answers": q11_answers,
             "mine": True,
         },
@@ -164,6 +181,7 @@ def pull_is_running():
 
 @app.route("/")
 def index():
+    """Show the analysis page."""
     try:
         questions = build_questions()
         error = None
@@ -196,7 +214,8 @@ def pull():
             return redirect(url_for("index", status="busy"))
         pull_state["result"] = None
         with open(PULL_LOG, "w", encoding="utf-8") as log:
-            pull_state["process"] = subprocess.Popen(
+            # The pull has to keep running after this request ends, so no `with`.
+            pull_state["process"] = subprocess.Popen(  # pylint: disable=consider-using-with
                 [sys.executable, "pull_data.py"],
                 cwd=BASE_DIR,
                 stdout=log,

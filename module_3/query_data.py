@@ -1,5 +1,9 @@
 """Answer the Grad Cafe analysis questions with raw SQL through psycopg."""
 
+# This file and orm_queries.py print the same results in the same format on
+# purpose, so the two can be compared side by side.
+# pylint: disable=duplicate-code
+
 import psycopg
 
 from db_config import get_connection
@@ -164,7 +168,8 @@ def show_average(value):
     return f"{value:.2f}"
 
 
-def main():
+def main():  # pylint: disable=too-many-locals
+    """Run every query and print the answers."""
     try:
         with get_connection() as conn:
             q1 = fetch_value(conn, Q1_SQL)

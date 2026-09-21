@@ -1,5 +1,11 @@
 """Answer some of the analysis questions again, using SQLAlchemy instead of SQL."""
 
+# pylint thinks func.count is not callable, which is wrong for SQLAlchemy.
+# pylint: disable=not-callable
+# This file and query_data.py print the same results in the same format on
+# purpose, so the two can be compared side by side.
+# pylint: disable=duplicate-code
+
 from sqlalchemy import Numeric, and_, cast, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -204,6 +210,7 @@ def gpa_by_decision(session):
 
 
 def main():
+    """Run the ORM queries and print the answers."""
     try:
         with Session() as session:
             q1 = fall_2026_count(session)

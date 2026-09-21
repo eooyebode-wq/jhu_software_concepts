@@ -165,6 +165,7 @@ def insert_rows(conn, rows):
 
 
 def main():
+    """Read the JSON file and load it into the applicants table."""
     path = DEFAULT_DATA_FILE
     if len(sys.argv) > 1:
         path = sys.argv[1]

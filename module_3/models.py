@@ -9,11 +9,11 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 from db_config import get_settings
 
 
-class Base(DeclarativeBase):
+class Base(DeclarativeBase):  # pylint: disable=too-few-public-methods
     """Parent class for every model."""
 
 
-class Applicant(Base):
+class Applicant(Base):  # pylint: disable=too-few-public-methods
     """One row of the existing applicants table (made by load_data.py)."""
 
     __tablename__ = "applicants"
@@ -50,4 +50,4 @@ def make_engine():
 
 
 engine = make_engine()
-Session = sessionmaker(engine)
+Session = sessionmaker(engine)  # pylint: disable=invalid-name
