@@ -1,75 +1,229 @@
-# Module 2 — Grad Cafe Web Scraper
+# Module 3 - Grad Cafe Database, SQL Analysis and Flask App
 
 ## Name
 
 Emmanuel Oyebode, JHED ID: eooyebod1
 
-## Module Info
+## What this project does
 
-Module 2 - Assignment: Web Scraping
-Due: 09/13/2026
+I took the cleaned Grad Cafe data from Module 2 and loaded it into a
+PostgreSQL database. Then I answered questions about it two ways: with raw
+SQL through `psycopg`, and with SQLAlchemy. The results are shown on a Flask
+webpage that has a Pull Data button (gets newly posted entries from Grad Cafe)
+and an Update Analysis button (refreshes the results).
 
-## Approach
+## Files
 
-For this project I scraped admissions results from The Grad Cafe, turned
-them into a clean JSON file, and then ran them through a small local AI
-model to standardize the school and program names.
+| File | What it does |
+|---|---|
+| `load_data.py` | Creates the `applicants` table and loads the Module 2 data into it |
+| `query_data.py` | Answers questions 1 to 11 with raw SQL and prints the results |
+| `models.py` | SQLAlchemy `Applicant` model, plus the engine and session |
+| `orm_queries.py` | The same kind of questions written with SQLAlchemy |
+| `app.py` | Flask app, with `templates/` and `static/style.css` |
+| `pull_data.py` | Fetches new Grad Cafe entries and adds them to the database |
+| `db_config.py` | Reads the database settings from environment variables |
+| `scrape.py`, `clean.py` | Module 2 scraper and cleaning code, reused by Pull Data |
+| `llm_extend_applicant_data.json` | The cleaned Module 2 data that gets loaded |
+| `query_results.pdf` | My write-up of all 11 SQL questions |
+| `limitations.pdf` | My reflection on the limits of Grad Cafe data |
 
-There are two main scripts:
+`llm_hosting/` and `applicant_data.json` are left over from Module 2. They
+aren't needed to run anything in this module.
 
-- **`scrape.py`** — gets the data from The Grad Cafe and saves it.
-- **`clean.py`** — takes what was scraped, puts it into a consistent format
-  (`applicant_data.json`), and runs the local AI model on it to produce
-  `llm_extend_applicant_data.json`.
+## Setup
 
-Both scripts can be run from the command line and pick up where they left
-off if they get interrupted, so nothing has to restart from scratch. I
-didn't hardcode any file paths that only work on my own computer.
+1. Install PostgreSQL. I used Postgres.app (postgresapp.com), which is free.
+   Open it and click Initialize so the server is running on port 5432.
+2. Install the Python packages (Python 3.10 or newer):
+   ```bash
+   python3 -m venv venv && source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+3. Create the database:
+   ```bash
+   createdb gradcafe
+   ```
 
-The sections below explain the trickier parts: why I couldn't just scrape
-the site normally, how I checked robots.txt, how to run everything, and
-what I found while cleaning the data.
+### Database settings
 
-## Hybrid scraping workflow (urllib3 + Selenium-attach + BeautifulSoup)
+The scripts read their connection settings from environment variables, so no
+password or other secret is stored in the code. They all have defaults that
+work with a normal local Postgres.app install, so on my computer I don't set
+anything.
 
-The Grad Cafe is protected by Cloudflare, which blocks two things I tried
-at first: a Selenium browser that launches itself (Cloudflare can tell it's
-a bot), and plain `urllib3` requests (these just get a 403 error).
+| Variable | Default |
+|---|---|
+| `DB_HOST` | `localhost` |
+| `DB_PORT` | `5432` |
+| `DB_NAME` | `gradcafe` |
+| `DB_USER` | not set (uses your computer username) |
+| `DB_PASSWORD` | not set |
 
-The workaround that actually works:
+For a different setup, set them before running, for example
+`export DB_USER=myname`. They only last for that terminal window.
 
-1. I open Chrome myself, with remote debugging turned on, and pass
-   Cloudflare's check once, like a normal person visiting the site.
-2. Selenium then **connects to that already-open browser** instead of
-   opening its own. Since Cloudflare already trusts this browser window,
-   Selenium gets to use that trust too.
-3. `urllib3` is used to build and check the page URLs before visiting them.
-4. Selenium tells the browser to go to each page.
-5. To grab the page's data, I don't use Selenium's normal
-   `driver.page_source` — I explain why below.
-6. BeautifulSoup finds the spot in the page's HTML where the data lives,
-   and Python's built-in `json` module reads it.
-7. `clean.py` turns that into the final format.
+## Loading the data
 
-**Why not `driver.page_source`?** The Grad Cafe website loads its results
-as a chunk of JSON text hidden inside the page's HTML. But once the page
-finishes loading in the browser, the site's own JavaScript code removes
-that JSON from the page. So if I ask Selenium for the current page HTML
-(`page_source`), the data is already gone by the time I look — I checked,
-and it was missing. Instead, I have the browser re-fetch the same page's
-raw HTML using `fetch()`, which still has the JSON in it. This is still
-going through the same trusted, already-logged-in browser — I'm just
-grabbing the page a different way.
+```bash
+python load_data.py
+```
 
-**Pagination** works through a "cursor" link instead of page numbers —
-each page tells me the web address of the next page. I just keep following
-that link until I have enough records.
+This creates the `applicants` table if it isn't there yet and inserts every
+record from `llm_extend_applicant_data.json`. To load a different file, put
+its name after the script. It prints how many records it read, how many were
+new, and how many were already in the table.
 
-## Browser / driver setup
+It is safe to run more than once. `p_id` is the primary key (the number at the
+end of each Grad Cafe entry link), and the insert uses
+`ON CONFLICT (p_id) DO NOTHING`, so an entry that is already there is skipped
+instead of duplicated.
 
-I used Chrome with ChromeDriver, connected through Selenium's "attach to an
-existing browser" feature instead of having Selenium open its own browser.
-Chrome has to already be running before you start the scraper:
+### How I cleaned the data before loading it
+
+My first averages were way off (GRE Quantitative came out around 21) because
+Grad Cafe stores `0` when someone leaves a score blank, and those zeros got
+averaged in. I fixed it in `load_data.py` so every query sees the same clean
+data.
+
+- A score of `0` is stored as `NULL`.
+- Out-of-range scores are also stored as `NULL`: GPA above 4.0, GRE Verbal or
+  Quantitative outside 130 to 170, and Analytical Writing above 6.0. Many
+  people used old GRE scales or a 10-point GPA.
+- Nationality `'0'` is stored as `NULL` too.
+- The `program` column holds the program and the university together, like
+  `Computer Science, Johns Hopkins University`.
+
+`AVG` ignores `NULL`, so each average only counts applicants who gave that
+score. An applicant with a GPA but no GRE still counts toward the GPA average.
+
+## Running the SQL queries
+
+```bash
+python query_data.py
+```
+
+This prints the answers to questions 1 to 9 from the assignment plus my two
+own questions (10 and 11). All the SQL is written out in the file. My
+explanations of each query are in `query_results.pdf`.
+
+Output follows the required formats: counts are whole numbers with commas
+(`33,212`), percentages have 2 decimals and a `%` sign (`47.13%`), and
+averages have 2 decimals (`3.76`).
+
+My two questions:
+
+- **Question 10:** Do international applicants report a higher average GRE
+  Quantitative score than American applicants?
+- **Question 11:** For Fall 2026, is the average GPA of accepted applicants
+  higher than the average GPA of rejected applicants?
+
+The numbers change a little whenever new entries are pulled in.
+`query_results.pdf` shows the data after my first Pull Data run, which added 7
+new entries to the original 40,000 (so 40,007 entries). The screenshots were
+taken at that same point. Pulling more data will make the numbers on the page
+a bit different from the PDF.
+
+## Running the SQLAlchemy queries
+
+```bash
+python orm_queries.py
+```
+
+This repeats questions 1, 4, 5, 8, 9 and my question 11 using SQLAlchemy. The
+`Applicant` model in `models.py` maps to the same `applicants` table that
+`load_data.py` creates, so there is no second copy of the data and the
+program never calls `create_all`. The answers match the raw SQL ones.
+
+## SQL vs. SQLAlchemy: Question 4 (average GPA of American applicants, Fall 2026)
+
+Raw SQL (`query_data.py`):
+
+```sql
+SELECT ROUND(AVG(gpa)::numeric, 2)
+FROM applicants
+WHERE term ILIKE 'fall 2026'
+  AND us_or_international ILIKE 'american'
+  AND gpa IS NOT NULL;
+```
+
+SQLAlchemy (`orm_queries.py`):
+
+```python
+stmt = select(rounded_avg(Applicant.gpa)).where(
+    and_(
+        Applicant.term.ilike("fall 2026"),
+        Applicant.us_or_international.ilike("american"),
+        Applicant.gpa.is_not(None),
+    )
+)
+return session.execute(stmt).scalar_one()
+```
+
+The SQL version is shorter and reads almost like a sentence, and I could paste
+it straight into psql to test it. The SQLAlchemy version needs more Python,
+but it uses the `Applicant` model, so a typo in a column name like
+`Applicant.gpaa` gives an error right away, and the same model can be reused
+in the Flask app. It also let me write the Q8 and Q9 filters once in a
+function and pass in different columns, where in SQL I had to copy the whole
+query. On the other hand, with SQL I know exactly what is running on the
+database, and with SQLAlchemy I had to print the compiled query to see what
+was really being sent. Some things like the regex match for MIT also took
+extra digging to figure out in SQLAlchemy. So I'd use plain SQL for quick
+one-off questions and the ORM when the queries are part of a bigger Python
+app.
+
+`rounded_avg` is a small helper I wrote that does `ROUND(AVG(...)::numeric, 2)`
+inside the query. At first I rounded in Python, and one average came out a
+cent off from the SQL version because Python and PostgreSQL round exact halves
+differently, so I moved the rounding into the query.
+
+## Running the Flask app
+
+```bash
+python app.py
+```
+
+Then open http://127.0.0.1:8080. The page runs the SQLAlchemy queries every
+time it loads and shows all 11 questions, with my two marked as "My question".
+
+### Pull Data
+
+Pull Data checks Grad Cafe for newly submitted application results and adds
+new records to the database. It runs `pull_data.py` in a separate process, so
+the page keeps working while it runs. Only one pull can run at a time. If you
+click it again while one is running, the page tells you instead of starting
+another. While a pull is running the page checks again every 10 seconds, and
+shows a message when it finishes (how many entries were added, or what went
+wrong).
+
+How it works:
+
+- It reuses the Module 2 code: `scrape.py` to get the pages, `clean.py` to
+  clean the records, and `load_data.py` to insert them.
+- It reads pages from newest to oldest and stops after the first page with
+  nothing new. Entries already in the database are never changed.
+- Chrome has to be open with remote debugging on port 9222 first, the same way
+  as in Module 2 (see below). If it isn't, the page says so.
+- Newly pulled entries have empty `llm_generated_program` and
+  `llm_generated_university` columns, because the LLM step from Module 2 needs
+  a large local model that isn't part of this project. Question 9 only counts
+  entries that have those fields.
+
+You can also run it without the webpage: `python pull_data.py`.
+
+### Update Analysis
+
+The Update Analysis button (top right) only reads the database again and shows
+the newest results. It never starts a scrape. If a pull is running, it tells
+you new data is being retrieved and leaves the pull alone.
+
+Run the app as one process (`python app.py`). The check for a running pull is
+kept in memory, so it wouldn't work with several copies of the app running.
+
+## Chrome setup for the scraper
+
+Chrome has to already be running before you use Pull Data:
 
 ```bash
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
@@ -78,160 +232,31 @@ Chrome has to already be running before you start the scraper:
   --remote-allow-origins="*"
 ```
 
-The `--remote-allow-origins` flag is needed on newer versions of Chrome, or
-it refuses the connection from Selenium. `--user-data-dir` just points
-Chrome to a separate, temporary profile folder so it doesn't touch your
-normal Chrome data.
+In that Chrome window, go to `https://www.thegradcafe.com/survey/` and get
+past Cloudflare's check if it shows up. The Grad Cafe blocks browsers that
+Selenium opens on its own and plain requests, so Selenium connects to this
+Chrome window instead. Keep that window open while you use Pull Data. Use a
+different terminal window for `python app.py`, because the Chrome command
+keeps its window busy.
 
-Once Chrome is open and past any Cloudflare check, `scrape.py` connects to
-it like this:
+`scrape.py` checks `https://www.thegradcafe.com/robots.txt` before scraping.
+I changed that check for this module. Python's built-in robots reader gets a
+403 error from the site with its default user agent and treats that as
+"everything is disallowed," so `_robots_allows()` now downloads the file with
+the scraper's own user agent and gives the text to the parser. The `/survey/`
+pages are allowed by the file. `screenshot.jpg` is the robots.txt screenshot
+from Module 2.
 
-```python
-options = Options()
-options.debugger_address = "127.0.0.1:9222"
-driver = webdriver.Chrome(options=options)
-```
+## Screenshots
 
-ChromeDriver itself gets downloaded automatically by Selenium — no need to
-install or match a driver version by hand.
+- `screenshots/SQL Console Output.png`: output of `python query_data.py`
+- `screenshots/ORM Console Output.png`: output of `python orm_queries.py`
+- `screenshots/Flask Page.png`: the running Flask page
 
-## robots.txt compliance
+## Known limitations
 
-Before scraping anything, `scrape.py` checks
-`https://www.thegradcafe.com/robots.txt` (function `_robots_allows()`) and
-stops if scraping isn't allowed. I used Python's built-in
-`urllib.robotparser` for this one check instead of `urllib3`, since
-`urllib3` doesn't have a robots.txt reader built in and I didn't want to
-add an extra library just for that. Everything else still uses `urllib3`.
-
-`screenshot.jpg` in this folder is a screenshot of the robots.txt page,
-taken as proof I actually looked at it before scraping.
-
-The file allows scraping for general visitors (`Allow: /`) and only blocks
-a few login/account pages, which I never touch. The search-result pages I
-actually scrape are allowed.
-
-One thing worth mentioning: while testing, I found that Python's
-robots.txt reader silently ignores a second set of rules further down in
-the file (a bug in the library itself, not something I did). It doesn't
-end up mattering here, since the pages I scrape are allowed either way —
-but I only know that because I double-checked by hand instead of trusting
-the library's answer.
-
-## Setup & run instructions
-
-1. Create a virtual environment and install everything:
-   ```bash
-   python3 -m venv venv && source venv/bin/activate
-   pip install -r requirements.txt
-   ```
-2. Open Chrome with remote debugging on (see command above), go to
-   `https://www.thegradcafe.com/survey/`, and get past Cloudflare's check
-   if it shows up.
-3. Run the scraper:
-   ```bash
-   python scrape.py --max-records 40000
-   ```
-   If this gets interrupted, running the same command again picks up
-   where it left off instead of starting over.
-4. Turn the raw data into the final format:
-   ```bash
-   python clean.py --out-path applicant_data.json
-   ```
-5. Run the local AI cleaning pass:
-   ```bash
-   python clean.py --skip-structuring --llm-extend \
-     --in-path applicant_data.json \
-     --llm-out-path llm_extend_applicant_data.json
-   ```
-
-I didn't parallelize the scraping step itself — each page's address only
-becomes known after loading the page before it, so there's no clean way to
-split the work across multiple workers anyway. The AI cleaning step (next
-section) is where parallelizing actually helps, since that part doesn't
-depend on the website at all.
-
-## Data schema
-
-Every record in `applicant_data.json` has the same 15 fields. If a value
-wasn't available, it's set to `null` — fields are never left out.
-
-| Field | Where it comes from | Notes |
-|---|---|---|
-| `program` | Grad Cafe's program field | Kept exactly as-is |
-| `university` | Grad Cafe's school field | Kept exactly as-is |
-| `comments` | Grad Cafe's notes field | Cleaned up stray HTML, nothing else changed |
-| `date_added` | When the entry was posted | |
-| `url` | Built from the entry's ID | Link to the entry on The Grad Cafe |
-| `applicant_status` | Accepted / Rejected / Wait listed / Interview / Other | |
-| `acceptance_date` | Only filled in if accepted | |
-| `rejection_date` | Only filled in if rejected | |
-| `semester_year` | e.g. "Spring 2027" | |
-| `student_type` | International / American | |
-| `gre_score` | | |
-| `gre_v_score` | | |
-| `gre_aw_score` | | |
-| `degree_type` | e.g. "PhD", "MFA" | Kept as Grad Cafe wrote it, not squeezed into just "Masters"/"PhD" |
-| `gpa` | | |
-
-Good news: Grad Cafe already lists the program and university as two
-separate fields, so I didn't have to split one messy combined string like
-older versions of this assignment expected. That made this part easier and
-less error-prone.
-
-## Cleaning pipeline / canonical list edits
-
-To standardize program and university names, I fed each record's
-program/university into `llm_hosting/app.py` (the small local AI model
-provided for this assignment) using its command-line mode, exactly as it
-was given to me — I didn't change how it works internally. It already does
-its own cleanup (fixing abbreviations, matching against a list of known
-university/program names), so I didn't build a second cleanup step on top
-of it.
-
-Since running the AI model on 40,000 rows one at a time would take way too
-long, I ran it as two processes at the same time, splitting the work in
-half. I tested a few different setups first (more workers wasn't always
-faster — the model already uses most of the computer's processing power on
-its own), and two workers turned out to be the fastest option. The full run
-took about 5.5 hours.
-
-**A mistake I found and fixed:** while checking the results, I noticed
-several records where "University of Michigan" had been incorrectly
-relabeled as "University of Milan" — a completely different school. This
-happened because the list of official university names
-(`canon_universities.txt`) only had "University of Michigan, Ann Arbor,"
-not the plain "University of Michigan," so the matching step picked the
-closest name it *did* have — and "Milan" happened to be a closer text
-match than "Michigan, Ann Arbor," even though it's obviously the wrong
-answer. I added "University of Michigan" to the list of official names,
-which fixed all 377 records that had this problem.
-
-I also tried a bigger fix — automatically comparing every cleaned result
-against the original text and "fixing" anything that looked too different.
-This caught a couple more real mistakes, but it also broke things that were
-actually correct, like changing "New York University" back into "Nyu." A
-name that's supposed to be expanded (like an abbreviation) is *supposed* to
-look different from the original, so that approach wasn't reliable. I
-undid this change and only kept the specific, confirmed fix above.
-
-Some imperfect results are still in the data and I didn't try to fix them
-by hand, since there are too many to check one by one:
-
-- The AI model sometimes introduces small typos of its own, like turning
-  "Religion" into "Religiion."
-- It sometimes drops part of a longer name, like shortening "Civil,
-  Construction, Environmental Engineering" down to just "Civil."
-- Other name-matching mistakes similar to the Michigan/Milan one probably
-  exist elsewhere in the data, since the list of official names is over
-  1,000 entries long and I could only check a sample by hand.
-
-## Known bugs
-
-- While running the full scrape, the Chrome tab crashed 5 separate times
-  over the course of the run (not because the website blocked me — just
-  Chrome itself becoming unstable after hours of continuous use). I added
-  code so that if this happens, the scraper automatically reopens a
-  connection to Chrome and keeps going from where it stopped, instead of
-  needing to be restarted by hand. This worked without any problems for
-  the rest of the run.
+- Pulled entries don't have the LLM program and university fields (see above).
+- Pull Data needs Chrome open and past the Cloudflare check.
+- `limitations.pdf` explains why the results can't be treated as a picture of
+  all applicants: the data is anonymous and self-reported, lots of values are
+  missing, and the people who post aren't a random sample.
