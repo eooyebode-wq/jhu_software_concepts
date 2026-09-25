@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block header_actions %}
+  <form method="post" action="{{ url_for('update') }}">
+    <button type="submit" class="button light">Update Analysis</button>
+  </form>
+{% endblock %}
+
+{% block content %}
+  <p class="intro">
+    Results from applicant entries collected from The Grad Cafe and stored in PostgreSQL.
+  </p>
+
+  {% if error %}
+    <div class="message error">{{ error }}</div>
+  {% endif %}
+
+  {% if running %}
+    <div class="message info">
+      New data is currently being retrieved from Grad Cafe. This page checks
+      again every 10 seconds.
+    </div>
+  {% elif pull_result %}
+    <div class="message {{ pull_result.kind }}">{{ pull_result.text }}</div>
+  {% endif %}
+
+  {% if message %}
+    <div class="message {{ message[0] }}">{{ message[1] }}</div>
+  {% endif %}
+
+  <section class="pull-box">
+    <div>
+      <h2>Get new data</h2>
+      <p>
+        The functionality of "Pull Data" is to check the Grad Cafe website for new application results and
+        add the new records to the database. Depending on the amount of new data available, this may take some time.
+      </p>
+    </div>
+    <form method="post" action="{{ url_for('pull') }}">
+      <button type="submit" class="button"{% if running %} disabled{% endif %}>Pull Data</button>
+    </form>
+  </section>
+
+  <section class="cards">
+    {% for q in questions %}
+      <article class="card{% if q.mine %} mine{% endif %}">
+        <h2>
+          Question {{ q.number }}
+          {% if q.mine %}<span class="tag">My question</span>{% endif %}
+        </h2>
+        <p class="question">{{ q.question }}</p>
+        <ul class="answers">
+          {% for line in q.answers %}
+            <li>{{ line }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+    {% endfor %}
+  </section>
+{% endblock %}

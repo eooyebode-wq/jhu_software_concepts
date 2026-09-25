@@ -2,6 +2,10 @@
 __pycache__/
 *.pyc
 venv/
+.claude/
+CLAUDE.md
+.coverage
+.pytest_cache/
 
 # module_2: intermediate scrape progress, not a deliverable
 module_2/raw_scrape_progress.jsonl
