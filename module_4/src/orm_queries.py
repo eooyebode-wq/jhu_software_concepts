@@ -9,7 +9,7 @@
 from sqlalchemy import Numeric, and_, cast, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from models import Applicant, Session
+from models import Applicant, get_session
 
 
 def rounded_avg(column):
@@ -212,7 +212,7 @@ def gpa_by_decision(session):
 def main():
     """Run the ORM queries and print the answers."""
     try:
-        with Session() as session:
+        with get_session() as session:
             q1 = fall_2026_count(session)
             q4 = american_fall_2026_gpa(session)
             q5 = fall_2025_acceptance_percent(session)

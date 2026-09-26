@@ -1,39 +1,61 @@
-"""Flask page that shows the Grad Cafe analysis results."""
+"""Flask app that shows the Grad Cafe analysis results."""
 
-import os
-import subprocess
-import sys
 import threading
 
-from flask import Flask, redirect, render_template, request, url_for
+from flask import Flask, jsonify, render_template
 from sqlalchemy.exc import SQLAlchemyError
 
 import orm_queries as oq
-from models import Applicant, Session
+from load_data import load_rows
+from models import Applicant, get_session
+from pull_data import run_pull, scrape_new_records
 
-app = Flask(__name__)
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PULL_LOG = os.path.join(BASE_DIR, "pull_data.log")
-
-# Only one pull may run at a time. The running process is remembered here in
-# memory, so run the app as one process (python app.py).
-pull_state = {"process": None, "result": None}
-pull_lock = threading.Lock()
-
-STATUS_MESSAGES = {
-    "started": ("info", "Pull Data started. New entries are being retrieved. "
-                        "This may take a while, and you can keep using this page."),
-    "busy": ("warning", "A data pull is already running, so a new one was not started."),
-    "updated": ("success", "Analysis updated with the latest data in the database."),
-    "update_busy": ("warning", "New data is currently being retrieved. Update Analysis "
-                               "did not interrupt it. Try again when the pull finishes."),
-}
+DB_ERROR_MESSAGE = (
+    "The database could not be reached. Check DATABASE_URL and make sure "
+    "PostgreSQL is running."
+)
 
 
-def build_questions():  # pylint: disable=too-many-locals
-    """Ask the database every question and return the answers as text."""
-    with Session() as session:
+class PullState:
+    """Remembers whether a data pull is running.
+
+    Tests can read or set `busy` directly instead of waiting on timing.
+    """
+
+    def __init__(self):
+        self.busy = False
+        self._lock = threading.Lock()
+
+    def try_start(self):
+        """Mark a pull as running unless one already is.
+
+        Returns:
+            True if this caller started the pull, False if one was running.
+        """
+        with self._lock:
+            if self.busy:
+                return False
+            self.busy = True
+            return True
+
+    def finish(self):
+        """Mark the pull as finished."""
+        with self._lock:
+            self.busy = False
+
+
+def build_analysis(database_url=None):  # pylint: disable=too-many-locals
+    """Ask the database every question and return the answers as text.
+
+    Args:
+        database_url: Optional URL that replaces DATABASE_URL.
+
+    Returns:
+        A dict with one key, "questions": a list of dicts with the keys
+        "number", "question" and "answers" (plus "mine" for my own
+        questions). Every answer starts with "Answer: ".
+    """
+    with get_session(database_url) as session:
         q1 = oq.fall_2026_count(session)
         q2 = oq.international_percent(session)
         gpa, gre, gre_v, gre_aw = oq.average_scores(session)
@@ -62,7 +84,7 @@ def build_questions():  # pylint: disable=too-many-locals
             f"{decision}: {oq.show_average(average)} ({oq.show_count(how_many)} applicants)"
         )
 
-    return [
+    questions = [
         {
             "number": 1,
             "question": "How many entries are from applicants who applied for Fall 2026?",
@@ -148,89 +170,84 @@ def build_questions():  # pylint: disable=too-many-locals
         },
     ]
 
-
-def read_pull_result(exit_code):
-    """Turn the finished pull's log file into a message for the page."""
-    try:
-        with open(PULL_LOG, "r", encoding="utf-8") as log:
-            lines = [line.strip() for line in log if line.strip()]
-    except OSError:
-        lines = []
-
-    for line in reversed(lines):
-        if exit_code == 0 and line.startswith("DONE:"):
-            return {"kind": "success", "text": "Pull finished. " + line[5:].strip().capitalize()}
-        if line.startswith("ERROR:"):
-            reason = line[6:].strip()
-            return {"kind": "error", "text": "Pull failed. " + reason[:1].upper() + reason[1:]}
-    return {"kind": "error", "text": "The pull stopped unexpectedly. Check that Chrome is open."}
+    for item in questions:
+        item["answers"] = [f"Answer: {line}" for line in item["answers"]]
+    return {"questions": questions}
 
 
-def pull_is_running():
-    """True while a pull is running. Records the result once it has finished."""
-    process = pull_state["process"]
-    if process is None:
-        return False
-    exit_code = process.poll()
-    if exit_code is None:
-        return True
-    pull_state["result"] = read_pull_result(exit_code)
-    pull_state["process"] = None
-    return False
+def create_app(config=None, scraper=None, loader=None, query_fn=None):
+    """Build the Flask app.
 
+    Every argument is optional. Tests pass fakes so nothing touches the
+    internet, and a test database URL through `config`.
 
-@app.route("/")
-def index():
-    """Show the analysis page."""
-    try:
-        questions = build_questions()
-        error = None
-    except SQLAlchemyError:
-        questions = []
-        error = "The database could not be reached. Make sure PostgreSQL is running."
+    Args:
+        config: Dict merged into app.config. Set "DATABASE_URL" here to use
+            a different database than the DATABASE_URL environment variable.
+        scraper: Function with no arguments that returns raw records.
+        loader: Function that takes a list of row tuples and returns how many
+            were added.
+        query_fn: Function with no arguments that returns the dict made by
+            build_analysis.
 
-    running = pull_is_running()
-    status = request.args.get("status")
-    message = STATUS_MESSAGES.get(status)
-    # These messages are about a pull that is in progress, so drop them once
-    # it has finished.
-    if not running and status in ("started", "busy", "update_busy"):
-        message = None
-    return render_template(
-        "index.html",
-        questions=questions,
-        error=error,
-        running=running,
-        message=message,
-        pull_result=pull_state["result"],
-    )
+    Returns:
+        The configured Flask app. Its busy state is available as
+        app.extensions["pull_state"].
+    """
+    app = Flask(__name__)
+    if config:
+        app.config.update(config)
 
+    state = PullState()
+    app.extensions["pull_state"] = state
 
-@app.route("/pull", methods=["POST"])
-def pull():
-    """Start a pull in a separate process, unless one is already running."""
-    with pull_lock:
-        if pull_is_running():
-            return redirect(url_for("index", status="busy"))
-        pull_state["result"] = None
-        with open(PULL_LOG, "w", encoding="utf-8") as log:
-            # The pull has to keep running after this request ends, so no `with`.
-            pull_state["process"] = subprocess.Popen(  # pylint: disable=consider-using-with
-                [sys.executable, "pull_data.py"],
-                cwd=BASE_DIR,
-                stdout=log,
-                stderr=subprocess.STDOUT,
-            )
-    return redirect(url_for("index", status="started"))
+    def database_url():
+        return app.config.get("DATABASE_URL")
 
+    scraper = scraper or (lambda: scrape_new_records(database_url()))
+    loader = loader or (lambda rows: load_rows(rows, database_url()))
+    query_fn = query_fn or (lambda: build_analysis(database_url()))
 
-@app.route("/update", methods=["POST"])
-def update():
-    """Reload the results. This never starts a scrape."""
-    if pull_is_running():
-        return redirect(url_for("index", status="update_busy"))
-    return redirect(url_for("index", status="updated"))
+    @app.route("/")
+    @app.route("/analysis")
+    def index():
+        """Show the analysis page."""
+        try:
+            questions = query_fn()["questions"]
+            error = None
+        except (SQLAlchemyError, RuntimeError):
+            questions = []
+            error = DB_ERROR_MESSAGE
+        return render_template(
+            "index.html", questions=questions, error=error, running=state.busy
+        )
+
+    @app.route("/pull-data", methods=["POST"])
+    def pull():
+        """Run a pull, unless one is already running."""
+        if not state.try_start():
+            return jsonify(busy=True), 409
+        try:
+            run_pull(scraper, loader)
+        except Exception as err:  # pylint: disable=broad-except
+            return jsonify(ok=False, error=str(err)), 500
+        finally:
+            state.finish()
+        return jsonify(ok=True)
+
+    @app.route("/update-analysis", methods=["POST"])
+    def update():
+        """Refresh the analysis. Does nothing while a pull is running."""
+        if state.busy:
+            return jsonify(busy=True), 409
+        try:
+            query_fn()
+        except (SQLAlchemyError, RuntimeError):
+            return jsonify(ok=False, error=DB_ERROR_MESSAGE), 500
+        return jsonify(ok=True)
+
+    return app
 
 
 if __name__ == "__main__":
-    app.run(port=8080)
+    create_app().run(port=8080)

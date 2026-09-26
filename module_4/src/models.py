@@ -1,12 +1,13 @@
-"""SQLAlchemy model for the applicants table, plus the engine and session."""
+"""SQLAlchemy model for the applicants table, plus engine and session helpers."""
 
+import functools
 from datetime import date
 
 from sqlalchemy import Date, Float, Integer, Text, create_engine
-from sqlalchemy.engine import URL
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+from sqlalchemy.engine import make_url
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
-from db_config import get_settings
+from db_config import get_database_url
 
 
 class Base(DeclarativeBase):  # pylint: disable=too-few-public-methods
@@ -35,19 +36,27 @@ class Applicant(Base):  # pylint: disable=too-few-public-methods
     llm_generated_university: Mapped[str | None] = mapped_column(Text)
 
 
-def make_engine():
-    """Build the engine from the same environment settings load_data.py uses."""
-    settings = get_settings()
-    url = URL.create(
-        "postgresql+psycopg",
-        username=settings.get("user"),
-        password=settings.get("password"),
-        host=settings["host"],
-        port=int(settings["port"]),
-        database=settings["dbname"],
-    )
+@functools.lru_cache(maxsize=None)
+def get_engine(database_url):
+    """Build one engine per database URL and reuse it.
+
+    Args:
+        database_url: A postgresql:// URL.
+
+    Returns:
+        A SQLAlchemy engine that uses the psycopg driver.
+    """
+    url = make_url(database_url).set(drivername="postgresql+psycopg")
     return create_engine(url)
 
 
-engine = make_engine()
-Session = sessionmaker(engine)  # pylint: disable=invalid-name
+def get_session(database_url=None):
+    """Open a session on the database.
+
+    Args:
+        database_url: Optional URL that replaces DATABASE_URL, used by tests.
+
+    Returns:
+        A new SQLAlchemy session.
+    """
+    return Session(get_engine(database_url or get_database_url()))

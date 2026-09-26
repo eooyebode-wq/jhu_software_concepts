@@ -164,6 +164,24 @@ def insert_rows(conn, rows):
     return added
 
 
+def load_rows(rows, database_url=None):
+    """Create the table if needed and insert the rows in one transaction.
+
+    If anything fails, the connection is closed without a commit, so no
+    partial writes are left behind.
+
+    Args:
+        rows: Row tuples in column order, as made by make_row.
+        database_url: Optional URL that replaces DATABASE_URL.
+
+    Returns:
+        How many rows were really added.
+    """
+    with get_connection(database_url) as conn:
+        create_table(conn)
+        return insert_rows(conn, rows)
+
+
 def main():
     """Read the JSON file and load it into the applicants table."""
     path = DEFAULT_DATA_FILE

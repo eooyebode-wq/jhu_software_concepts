@@ -1,34 +1,32 @@
-"""Database connection settings, read from environment variables."""
+"""Database connection settings, read from the DATABASE_URL variable."""
 
 import os
 
 import psycopg
 
 
-def get_settings():
-    """Return the connection settings as a dictionary.
+def get_database_url():
+    """Return the database URL from the DATABASE_URL environment variable.
 
-    Host, port and database name have defaults that match a local
-    Postgres.app install. User and password are only added if they are set,
-    so nothing secret ever has to be written in the code.
+    Returns:
+        The URL, for example postgresql://user:password@localhost:5432/gradcafe.
+
+    Raises:
+        RuntimeError: If DATABASE_URL is not set.
     """
-    settings = {
-        "host": os.environ.get("DB_HOST", "localhost"),
-        "port": os.environ.get("DB_PORT", "5432"),
-        "dbname": os.environ.get("DB_NAME", "gradcafe"),
-    }
-
-    user = os.environ.get("DB_USER")
-    if user:
-        settings["user"] = user
-
-    password = os.environ.get("DB_PASSWORD")
-    if password:
-        settings["password"] = password
-
-    return settings
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise RuntimeError("DATABASE_URL is not set.")
+    return url
 
 
-def get_connection():
-    """Open and return a psycopg connection to the database."""
-    return psycopg.connect(**get_settings())
+def get_connection(database_url=None):
+    """Open and return a psycopg connection to the database.
+
+    Args:
+        database_url: Optional URL that replaces DATABASE_URL, used by tests.
+
+    Returns:
+        An open psycopg connection.
+    """
+    return psycopg.connect(database_url or get_database_url())
