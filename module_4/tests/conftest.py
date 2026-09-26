@@ -9,7 +9,8 @@ import psycopg
 import pytest
 from sqlalchemy.engine import make_url
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+SRC_DIR = Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(SRC_DIR))
 
 # pylint: disable=wrong-import-position
 from app import create_app
@@ -63,6 +64,12 @@ FAKE_RECORDS = [
     make_record(1007, "History", "Brown", "Masters",
                 "Interview", "Fall 2026", "American", "3.20", "150"),
 ]
+
+
+@pytest.fixture
+def src_dir():
+    """The folder that holds the application code."""
+    return SRC_DIR
 
 
 @pytest.fixture(scope="session")

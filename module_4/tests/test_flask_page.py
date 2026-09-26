@@ -1,10 +1,22 @@
 """Tests for the Flask app factory and the analysis page."""
 
+import runpy
+
 import pytest
 from bs4 import BeautifulSoup
 from flask import Flask
 
 pytestmark = pytest.mark.web
+
+
+def test_running_app_as_a_script_starts_the_server_on_port_8080(monkeypatch, src_dir):
+    # Given a Flask.run that records its arguments instead of starting a server
+    started = {}
+    monkeypatch.setattr(Flask, "run", lambda self, **kwargs: started.update(kwargs))
+    # When app.py runs as __main__
+    runpy.run_path(str(src_dir / "app.py"), run_name="__main__")
+    # Then the server was asked to start on port 8080
+    assert started == {"port": 8080}
 
 
 def page_soup(client, path="/analysis"):

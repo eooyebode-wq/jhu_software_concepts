@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import html
 import json
 import math
@@ -208,9 +209,12 @@ def standardize_names(
     ]
 
 
-if __name__ == "__main__":
-    import argparse
+def main(argv=None):
+    """Run the cleaning and LLM standardization steps from the command line.
 
+    Args:
+        argv: Optional list of command-line arguments. Uses sys.argv if None.
+    """
     parser = argparse.ArgumentParser(
         description="Structure scrape.py's raw output, and/or run the local-LLM "
         "program/university standardization pass."
@@ -234,7 +238,7 @@ if __name__ == "__main__":
     parser.add_argument("--n-threads", type=int, default=DEFAULT_N_THREADS_PER_WORKER)
     parser.add_argument("--skip-structuring", action="store_true",
                          help="Skip the raw->applicant_data.json step and go straight to --llm-extend.")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     structured = None
     if not args.skip_structuring:
@@ -252,3 +256,7 @@ if __name__ == "__main__":
         extended = standardize_names(structured, n_workers=args.n_workers, n_threads=args.n_threads)
         save_data(extended, args.llm_out_path)
         print(f"Saved {len(extended)} LLM-extended records to {args.llm_out_path}.")
+
+
+if __name__ == "__main__":
+    main()

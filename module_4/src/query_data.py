@@ -19,7 +19,7 @@ WHERE term ILIKE 'fall 2026';
 Q2_SQL = r"""
 SELECT ROUND(
     100.0 * COUNT(*) FILTER (WHERE us_or_international ILIKE 'international')
-    / COUNT(*), 2)
+    / NULLIF(COUNT(*), 0), 2)
 FROM applicants
 WHERE us_or_international IS NOT NULL
   AND TRIM(us_or_international) <> '';
@@ -46,7 +46,8 @@ WHERE term ILIKE 'fall 2026'
 # Q5: percent of Fall 2025 entries that are acceptances
 Q5_SQL = r"""
 SELECT ROUND(
-    100.0 * COUNT(*) FILTER (WHERE status ILIKE 'accepted') / COUNT(*), 2)
+    100.0 * COUNT(*) FILTER (WHERE status ILIKE 'accepted')
+    / NULLIF(COUNT(*), 0), 2)
 FROM applicants
 WHERE term ILIKE 'fall 2025';
 """

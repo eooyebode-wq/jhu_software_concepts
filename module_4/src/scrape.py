@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import time
@@ -198,15 +199,18 @@ def scrape_data(
     return _load_raw_records(raw_path)[:max_records]
 
 
-if __name__ == "__main__":
-    import argparse
+def main(argv=None):
+    """Run the scraper from the command line.
 
+    Args:
+        argv: Optional list of command-line arguments. Uses sys.argv if None.
+    """
     parser = argparse.ArgumentParser(description="Scrape applicant entries from The Grad Cafe.")
     parser.add_argument("--max-records", type=int, default=DEFAULT_TARGET_RECORDS)
     parser.add_argument("--debugger-address", default=DEBUGGER_ADDRESS)
     parser.add_argument("--raw-path", default=DEFAULT_RAW_PATH)
     parser.add_argument("--state-path", default=DEFAULT_STATE_PATH)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     scrape_data(
         max_records=args.max_records,
@@ -214,3 +218,7 @@ if __name__ == "__main__":
         state_path=args.state_path,
         debugger_address=args.debugger_address,
     )
+
+
+if __name__ == "__main__":
+    main()
