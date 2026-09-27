@@ -1,4 +1,4 @@
-# Module 3: Grad Cafe database, SQLAlchemy and Flask app
+# Module 4: Grad Cafe database, SQLAlchemy, Flask app, tests and docs
 # Python 3.10 or newer
 
 # Database
@@ -16,3 +16,7 @@ urllib3==2.8.0
 # Tests and coverage
 pytest==9.1.1
 pytest-cov==7.1.0
+
+# Docs
+Sphinx==9.1.0
+sphinx_rtd_theme==3.1.0
