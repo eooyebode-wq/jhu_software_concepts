@@ -77,7 +77,7 @@ That command is what `module_4/pytest.ini` is built for, and what
 Full documentation, including setup, architecture, the API reference, and
 the testing guide, is built with Sphinx and published on Read the Docs:
 
-**[Read the Docs link goes here once the project is connected]**
+https://eooyebode-jhu-software-concepts.readthedocs.io/en/latest/
 
 The built HTML also lives in this repo at `module_4/docs/build/html`. To
 rebuild it locally:
