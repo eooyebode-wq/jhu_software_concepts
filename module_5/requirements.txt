@@ -1,0 +1,22 @@
+# Module 4: Grad Cafe database, SQLAlchemy, Flask app, tests and docs
+# Python 3.10 or newer
+
+# Database
+psycopg[binary]==3.3.6
+SQLAlchemy==2.0.54
+
+# Web app
+Flask==3.1.3
+
+# Scraper used by Pull Data
+selenium==4.49.0
+beautifulsoup4==4.15.0
+urllib3==2.8.0
+
+# Tests and coverage
+pytest==9.1.1
+pytest-cov==7.1.0
+
+# Docs
+Sphinx==9.1.0
+sphinx_rtd_theme==3.1.0

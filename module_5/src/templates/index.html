@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block header_actions %}
+  <button type="button" class="button light" id="update-btn"
+          data-testid="update-analysis-btn">Update Analysis</button>
+{% endblock %}
+
+{% block content %}
+  <p class="intro">
+    Results from applicant entries collected from The Grad Cafe and stored in PostgreSQL.
+  </p>
+
+  {% if error %}
+    <div class="message error">{{ error }}</div>
+  {% endif %}
+
+  {% if running %}
+    <div class="message info">
+      New data is currently being retrieved from Grad Cafe. This page checks
+      again every 10 seconds.
+    </div>
+  {% endif %}
+
+  <div class="message" id="status" hidden></div>
+
+  <section class="pull-box">
+    <div>
+      <h2>Get new data</h2>
+      <p>
+        The functionality of "Pull Data" is to check the Grad Cafe website for new application results and
+        add the new records to the database. Depending on the amount of new data available, this may take some time.
+      </p>
+    </div>
+    <button type="button" class="button" id="pull-btn"
+            data-testid="pull-data-btn"{% if running %} disabled{% endif %}>Pull Data</button>
+  </section>
+
+  <section class="cards">
+    {% for q in questions %}
+      <article class="card{% if q.mine %} mine{% endif %}">
+        <h2>
+          Question {{ q.number }}
+          {% if q.mine %}<span class="tag">My question</span>{% endif %}
+        </h2>
+        <p class="question">{{ q.question }}</p>
+        <ul class="answers">
+          {% for line in q.answers %}
+            <li>{{ line }}</li>
+          {% endfor %}
+        </ul>
+      </article>
+    {% endfor %}
+  </section>
+
+  <script>
+    const statusBox = document.getElementById("status");
+
+    function showStatus(kind, text) {
+      statusBox.className = "message " + kind;
+      statusBox.textContent = text;
+      statusBox.hidden = false;
+    }
+
+    async function send(url, button, workingText, doneText) {
+      button.disabled = true;
+      showStatus("info", workingText);
+      try {
+        const response = await fetch(url, { method: "POST" });
+        const body = await response.json();
+        if (response.ok) {
+          sessionStorage.setItem("status", JSON.stringify(["success", doneText]));
+          window.location.reload();
+          return;
+        }
+        if (body.busy) {
+          showStatus("warning", "A data pull is already running, so nothing was started.");
+        } else {
+          showStatus("error", body.error || "Something went wrong.");
+        }
+      } catch (err) {
+        showStatus("error", "The request failed. Is the app still running?");
+      }
+      button.disabled = false;
+    }
+
+    document.getElementById("pull-btn").addEventListener("click", function () {
+      send("{{ url_for('pull') }}", this, "Pull Data started. This may take a while.",
+           "Pull finished. The analysis shows the latest data.");
+    });
+
+    document.getElementById("update-btn").addEventListener("click", function () {
+      send("{{ url_for('update') }}", this, "Updating the analysis.",
+           "Analysis updated with the latest data in the database.");
+    });
+
+    const saved = sessionStorage.getItem("status");
+    if (saved) {
+      sessionStorage.removeItem("status");
+      const [kind, text] = JSON.parse(saved);
+      showStatus(kind, text);
+    }
+  </script>
+{% endblock %}
