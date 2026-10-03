@@ -10,6 +10,7 @@ from sqlalchemy import Numeric, and_, cast, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from models import Applicant, get_session
+from sql_utils import DEFAULT_LIMIT, clamp_limit
 
 
 def rounded_avg(column):
@@ -46,7 +47,7 @@ def fall_2026_count(session):
         .select_from(Applicant)
         .where(Applicant.term.ilike("fall 2026"))
     )
-    return session.execute(stmt).scalar_one()
+    return session.execute(stmt.limit(1)).scalar_one()
 
 
 def american_fall_2026_gpa(session):
@@ -58,7 +59,7 @@ def american_fall_2026_gpa(session):
             Applicant.gpa.is_not(None),
         )
     )
-    return session.execute(stmt).scalar_one()
+    return session.execute(stmt.limit(1)).scalar_one()
 
 
 def fall_2025_acceptance_percent(session):
@@ -69,7 +70,7 @@ def fall_2025_acceptance_percent(session):
     ).where(
         Applicant.term.ilike("fall 2025")
     )
-    return session.execute(stmt).scalar_one()
+    return session.execute(stmt.limit(1)).scalar_one()
 
 
 def phd_cs_acceptance_count(session, program_column, university_column):
@@ -98,7 +99,7 @@ def phd_cs_acceptance_count(session, program_column, university_column):
             )
         )
     )
-    return session.execute(stmt).scalar_one()
+    return session.execute(stmt.limit(1)).scalar_one()
 
 
 def international_percent(session):
@@ -116,7 +117,7 @@ def international_percent(session):
             func.trim(Applicant.us_or_international) != "",
         )
     )
-    return session.execute(stmt).scalar_one()
+    return session.execute(stmt.limit(1)).scalar_one()
 
 
 def average_scores(session):
@@ -131,7 +132,7 @@ def average_scores(session):
         rounded_avg(Applicant.gre_v),
         rounded_avg(Applicant.gre_aw),
     )
-    return session.execute(stmt).one()
+    return session.execute(stmt.limit(1)).one()
 
 
 def accepted_fall_2026_gpa(session):
@@ -143,7 +144,7 @@ def accepted_fall_2026_gpa(session):
             Applicant.gpa.is_not(None),
         )
     )
-    return session.execute(stmt).scalar_one()
+    return session.execute(stmt.limit(1)).scalar_one()
 
 
 def jhu_masters_cs_count(session):
@@ -163,10 +164,10 @@ def jhu_masters_cs_count(session):
             )
         )
     )
-    return session.execute(stmt).scalar_one()
+    return session.execute(stmt.limit(1)).scalar_one()
 
 
-def gre_by_nationality(session):
+def gre_by_nationality(session, limit=DEFAULT_LIMIT):
     """Q10: average GRE Quantitative for American vs International."""
     stmt = (
         select(
@@ -186,10 +187,10 @@ def gre_by_nationality(session):
         .group_by(Applicant.us_or_international)
         .order_by(Applicant.us_or_international)
     )
-    return session.execute(stmt).all()
+    return session.execute(stmt.limit(clamp_limit(limit))).all()
 
 
-def gpa_by_decision(session):
+def gpa_by_decision(session, limit=DEFAULT_LIMIT):
     """Q11: average GPA of accepted vs rejected Fall 2026 applicants."""
     stmt = (
         select(Applicant.status, func.count(Applicant.gpa), rounded_avg(Applicant.gpa))
@@ -206,7 +207,7 @@ def gpa_by_decision(session):
         .group_by(Applicant.status)
         .order_by(Applicant.status)
     )
-    return session.execute(stmt).all()
+    return session.execute(stmt.limit(clamp_limit(limit))).all()
 
 
 def main():

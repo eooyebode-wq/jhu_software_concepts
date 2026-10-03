@@ -10,12 +10,14 @@ import sys
 import time
 
 import psycopg
+from psycopg import sql
 from selenium.common.exceptions import WebDriverException
 
 import scrape
 from clean import clean_data
 from db_config import get_connection
 from load_data import create_table, load_rows, make_row
+from sql_utils import MAX_LIMIT
 
 # The Module 2 scraper helpers start with an underscore, but they are reused
 # here on purpose instead of copying them.
@@ -46,11 +48,27 @@ def chrome_is_open():
         return False
 
 
+KNOWN_IDS_STMT = sql.SQL(
+    "SELECT {p_id} FROM {table} WHERE {p_id} > %s ORDER BY {p_id} LIMIT %s"
+).format(p_id=sql.Identifier("p_id"), table=sql.Identifier("applicants"))
+
+
 def get_known_ids(conn):
-    """Return the set of p_id values already in the database."""
-    with conn.cursor() as cur:
-        cur.execute("SELECT p_id FROM applicants")
-        return {row[0] for row in cur.fetchall()}
+    """Return the set of p_id values already in the database.
+
+    The ids are read in pages of MAX_LIMIT rows, so no single query asks for
+    the whole table.
+    """
+    known = set()
+    last_seen = 0
+    while True:
+        with conn.cursor() as cur:
+            cur.execute(KNOWN_IDS_STMT, (last_seen, MAX_LIMIT))
+            page = [row[0] for row in cur.fetchall()]
+        known.update(page)
+        if len(page) < MAX_LIMIT:
+            return known
+        last_seen = page[-1]
 
 
 def fetch_new_raw_records(known_ids):

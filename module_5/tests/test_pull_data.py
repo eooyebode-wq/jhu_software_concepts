@@ -201,3 +201,14 @@ def test_running_the_file_as_a_script_exits_with_the_result(monkeypatch, src_dir
     assert exit_info.value.code == 1
     assert "Chrome" in capsys.readouterr().out
     assert sys.modules["pull_data"] is pull_data
+
+
+def test_get_known_ids_reads_more_rows_than_one_page(db_conn):
+    # Given more rows than fit in one page
+    db_conn.execute(
+        "INSERT INTO applicants (p_id) SELECT g FROM generate_series(1, 250) AS g"
+    )
+    # When the known ids are read
+    known = pull_data.get_known_ids(db_conn)
+    # Then every id comes back
+    assert known == set(range(1, 251))
