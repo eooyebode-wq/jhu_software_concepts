@@ -1,23 +1,68 @@
-# Module 4: Grad Cafe database, SQLAlchemy, Flask app, tests and docs
-# Python 3.10 or newer
-
-# Database
-psycopg[binary]==3.3.6
-SQLAlchemy==2.0.54
-python-dotenv==1.2.4
-
-# Web app
-Flask==3.1.3
-
-# Scraper used by Pull Data
-selenium==4.49.0
+# Module 5: every package the app, tests, docs and checks need, pinned.
+# Python 3.10 or newer.
+# Top-level packages: psycopg[binary], SQLAlchemy, python-dotenv, Flask,
+# selenium, beautifulsoup4, urllib3, pytest, pytest-cov, Sphinx,
+# sphinx_rtd_theme, pylint, pydeps. The rest are their dependencies, pinned
+# so that "uv pip sync" and "pip install -r" give the same environment.
+alabaster==1.0.0
+astroid==4.3.3
+attrs==26.1.0
+babel==2.18.0
 beautifulsoup4==4.15.0
-urllib3==2.8.0
-
-# Tests and coverage
+blinker==1.9.0
+certifi==2026.7.22
+charset-normalizer==3.5.2
+click==8.5.0
+coverage==7.16.2
+dill==0.4.1
+docutils==0.22.4
+Flask==3.1.3
+h11==0.16.0
+idna==3.20
+imagesize==2.0.1
+iniconfig==2.3.0
+isort==9.0.2
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.4
+mccabe==0.7.0
+mypy_extensions==1.1.0
+outcome==1.3.0.post0
+packaging==26.3
+platformdirs==4.12.2
+pluggy==1.6.0
+psycopg==3.3.6
+psycopg-binary==3.3.6
+pydeps==3.0.9
+Pygments==2.21.0
+pylint==4.1.2
+PySocks==1.7.1
 pytest==9.1.1
 pytest-cov==7.1.0
-
-# Docs
+python-dotenv==1.2.4
+requests==2.34.2
+roman-numerals==4.1.0
+selenium==4.49.0
+sniffio==1.3.1
+snowballstemmer==3.1.1
+sortedcontainers==2.4.0
+soupsieve==2.10
 Sphinx==9.1.0
 sphinx_rtd_theme==3.1.0
+sphinxcontrib-applehelp==2.0.0
+sphinxcontrib-devhelp==2.0.0
+sphinxcontrib-htmlhelp==2.1.0
+sphinxcontrib-jquery==4.1
+sphinxcontrib-jsmath==1.0.1
+sphinxcontrib-qthelp==2.0.0
+sphinxcontrib-serializinghtml==2.0.0
+SQLAlchemy==2.0.54
+stdlib-list==0.12.0
+tomlkit==0.15.1
+trio==0.34.0
+trio-websocket==0.12.2
+typing_extensions==4.16.0
+urllib3==2.8.0
+websocket-client==1.9.2
+Werkzeug==3.1.9
+wsproto==1.3.2

@@ -21,6 +21,38 @@ module_4/
   requirements.txt
 ```
 
+## Fresh Install
+
+Run these from the `module_5` folder. `requirements.txt` lists every package
+with an exact version, so both methods build the same environment. The
+`pip install -e .` step uses `setup.py` to install the project's modules, so
+imports work from any folder.
+
+### With pip and venv
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install -e .
+```
+
+### With uv
+
+Install uv first if you do not have it (`pip install uv`, or see
+https://docs.astral.sh/uv/getting-started/installation/). Then:
+
+```bash
+uv venv
+source .venv/bin/activate
+uv pip sync requirements.txt
+uv pip install -e .
+```
+
+`uv pip sync` makes the environment match `requirements.txt` exactly, and
+removes anything not listed. `uv pip install -r requirements.txt` also works
+if you only want to add the listed packages.
+
 ## Setup
 
 1. Install PostgreSQL and create a database, for example `gradcafe`.
