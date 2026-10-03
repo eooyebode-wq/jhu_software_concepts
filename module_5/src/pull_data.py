@@ -19,9 +19,8 @@ from db_config import get_connection
 from load_data import load_rows, make_row
 from sql_utils import MAX_LIMIT
 
-# The Module 2 scraper helpers start with an underscore, but they are reused
-# here on purpose instead of copying them.
-# pylint: disable=protected-access
+# Everything a pull can fail with that the Flask route reports as an error.
+PULL_ERRORS = (psycopg.Error, WebDriverException, RuntimeError, OSError, ValueError)
 
 # Safety limit so a pull can never run forever.
 MAX_PAGES = 200
@@ -86,20 +85,20 @@ def fetch_new_raw_records(known_ids):
     Raises:
         RuntimeError: If robots.txt forbids scraping or a link leaves the site.
     """
-    if not scrape._robots_allows("/survey/"):
+    if not scrape.robots_allows("/survey/"):
         raise RuntimeError("robots.txt does not allow scraping /survey/.")
 
-    driver = scrape._attach_driver()
+    driver = scrape.attach_driver()
     new_records = []
     url = scrape.SURVEY_URL
     pages = 0
 
     try:
         while url and pages < MAX_PAGES:
-            if not scrape._is_same_site(url):
+            if not scrape.is_same_site(url):
                 raise RuntimeError(f"Refusing to follow off-site link: {url}")
 
-            data = scrape._fetch_page_json(driver, url)
+            data = scrape.fetch_page_json(driver, url)
             page_records = data["props"]["results"]["data"]
             fresh = [r for r in page_records if r.get("id") not in known_ids]
             new_records.extend(fresh)
@@ -168,7 +167,7 @@ def main():
     except WebDriverException:
         print(f"ERROR: {CHROME_MESSAGE}")
         return 1
-    except Exception as err:  # pylint: disable=broad-except
+    except (RuntimeError, OSError, ValueError) as err:
         print(f"ERROR: {err}")
         return 1
 

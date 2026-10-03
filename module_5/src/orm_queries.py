@@ -1,14 +1,10 @@
 """Answer some of the analysis questions again, using SQLAlchemy instead of SQL."""
 
-# pylint thinks func.count is not callable, which is wrong for SQLAlchemy.
-# pylint: disable=not-callable
-# This file and query_data.py print the same results in the same format on
-# purpose, so the two can be compared side by side.
-# pylint: disable=duplicate-code
-
 from sqlalchemy import Numeric, and_, cast, func, or_, select
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.sql.functions import count
 
+from formatting import show_average, show_count, show_percent
 from models import Applicant, get_session
 from sql_utils import DEFAULT_LIMIT, clamp_limit
 
@@ -21,29 +17,10 @@ def rounded_avg(column):
     return func.round(cast(func.avg(column), Numeric), 2)
 
 
-def show_count(value):
-    """Whole number with commas, like 19,290."""
-    return f"{int(value):,}"
-
-
-def show_percent(value):
-    """Two decimals and a percent sign, like 50.09%."""
-    if value is None:
-        return "N/A"
-    return f"{value:.2f}%"
-
-
-def show_average(value):
-    """Two decimals, like 3.79."""
-    if value is None:
-        return "N/A"
-    return f"{value:.2f}"
-
-
 def fall_2026_count(session):
     """Q1: how many entries are for Fall 2026."""
     stmt = (
-        select(func.count())
+        select(count())
         .select_from(Applicant)
         .where(Applicant.term.ilike("fall 2026"))
     )
@@ -64,9 +41,9 @@ def american_fall_2026_gpa(session):
 
 def fall_2025_acceptance_percent(session):
     """Q5: percent of Fall 2025 entries that are acceptances."""
-    accepted = func.count().filter(Applicant.status.ilike("accepted"))
+    accepted = count().filter(Applicant.status.ilike("accepted"))
     stmt = select(
-        func.round(cast(100.0 * accepted / func.nullif(func.count(), 0), Numeric), 2)
+        func.round(cast(100.0 * accepted / func.nullif(count(), 0), Numeric), 2)
     ).where(
         Applicant.term.ilike("fall 2025")
     )
@@ -87,7 +64,7 @@ def phd_cs_acceptance_count(session, program_column, university_column):
         university_column.ilike("%carnegie mellon%"),
     )
     stmt = (
-        select(func.count())
+        select(count())
         .select_from(Applicant)
         .where(
             and_(
@@ -104,12 +81,12 @@ def phd_cs_acceptance_count(session, program_column, university_column):
 
 def international_percent(session):
     """Q2: percent international among entries with a usable nationality."""
-    international = func.count().filter(
+    international = count().filter(
         Applicant.us_or_international.ilike("international")
     )
     stmt = select(
         func.round(
-            cast(100.0 * international / func.nullif(func.count(), 0), Numeric), 2
+            cast(100.0 * international / func.nullif(count(), 0), Numeric), 2
         )
     ).where(
         and_(
@@ -150,7 +127,7 @@ def accepted_fall_2026_gpa(session):
 def jhu_masters_cs_count(session):
     """Q7: Johns Hopkins master's Computer Science entries (original fields)."""
     stmt = (
-        select(func.count())
+        select(count())
         .select_from(Applicant)
         .where(
             and_(
@@ -172,7 +149,7 @@ def gre_by_nationality(session, limit=DEFAULT_LIMIT):
     stmt = (
         select(
             Applicant.us_or_international,
-            func.count(Applicant.gre),
+            count(Applicant.gre),
             rounded_avg(Applicant.gre),
         )
         .where(
@@ -193,7 +170,7 @@ def gre_by_nationality(session, limit=DEFAULT_LIMIT):
 def gpa_by_decision(session, limit=DEFAULT_LIMIT):
     """Q11: average GPA of accepted vs rejected Fall 2026 applicants."""
     stmt = (
-        select(Applicant.status, func.count(Applicant.gpa), rounded_avg(Applicant.gpa))
+        select(Applicant.status, count(Applicant.gpa), rounded_avg(Applicant.gpa))
         .where(
             and_(
                 Applicant.term.ilike("fall 2026"),

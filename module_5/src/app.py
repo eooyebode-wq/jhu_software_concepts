@@ -6,9 +6,10 @@ from flask import Flask, jsonify, render_template
 from sqlalchemy.exc import SQLAlchemyError
 
 import orm_queries as oq
+from formatting import show_average, show_count, show_percent
 from load_data import load_rows
 from models import Applicant, get_session
-from pull_data import run_pull, scrape_new_records
+from pull_data import PULL_ERRORS, run_pull, scrape_new_records
 
 DB_ERROR_MESSAGE = (
     "The database could not be reached. Check the DB_* settings and make sure "
@@ -44,7 +45,36 @@ class PullState:
             self.busy = False
 
 
-def build_analysis(database_url=None):  # pylint: disable=too-many-locals
+def fetch_results(session):
+    """Run every analysis query and return the raw values in a dict."""
+    return {
+        "q1": oq.fall_2026_count(session),
+        "q2": oq.international_percent(session),
+        "scores": oq.average_scores(session),
+        "q4": oq.american_fall_2026_gpa(session),
+        "q5": oq.fall_2025_acceptance_percent(session),
+        "q6": oq.accepted_fall_2026_gpa(session),
+        "q7": oq.jhu_masters_cs_count(session),
+        "q8": oq.phd_cs_acceptance_count(session, Applicant.program, Applicant.program),
+        "q9": oq.phd_cs_acceptance_count(
+            session,
+            Applicant.llm_generated_program,
+            Applicant.llm_generated_university,
+        ),
+        "q10": oq.gre_by_nationality(session),
+        "q11": oq.gpa_by_decision(session),
+    }
+
+
+def group_lines(rows):
+    """Turn (label, count, average) rows into one answer line per label."""
+    return [
+        f"{label}: {show_average(average)} ({show_count(how_many)} applicants)"
+        for label, how_many, average in rows
+    ]
+
+
+def build_analysis(database_url=None):
     """Ask the database every question and return the answers as text.
 
     Args:
@@ -56,39 +86,14 @@ def build_analysis(database_url=None):  # pylint: disable=too-many-locals
         questions). Every answer starts with "Answer: ".
     """
     with get_session(database_url) as session:
-        q1 = oq.fall_2026_count(session)
-        q2 = oq.international_percent(session)
-        gpa, gre, gre_v, gre_aw = oq.average_scores(session)
-        q4 = oq.american_fall_2026_gpa(session)
-        q5 = oq.fall_2025_acceptance_percent(session)
-        q6 = oq.accepted_fall_2026_gpa(session)
-        q7 = oq.jhu_masters_cs_count(session)
-        q8 = oq.phd_cs_acceptance_count(session, Applicant.program, Applicant.program)
-        q9 = oq.phd_cs_acceptance_count(
-            session,
-            Applicant.llm_generated_program,
-            Applicant.llm_generated_university,
-        )
-        q10_rows = oq.gre_by_nationality(session)
-        q11_rows = oq.gpa_by_decision(session)
-
-    q10_answers = []
-    for group, how_many, average in q10_rows:
-        q10_answers.append(
-            f"{group}: {oq.show_average(average)} ({oq.show_count(how_many)} applicants)"
-        )
-
-    q11_answers = []
-    for decision, how_many, average in q11_rows:
-        q11_answers.append(
-            f"{decision}: {oq.show_average(average)} ({oq.show_count(how_many)} applicants)"
-        )
+        results = fetch_results(session)
+    gpa, gre, gre_v, gre_aw = results["scores"]
 
     questions = [
         {
             "number": 1,
             "question": "How many entries are from applicants who applied for Fall 2026?",
-            "answers": [f"Fall 2026 applicant count: {oq.show_count(q1)}"],
+            "answers": [f"Fall 2026 applicant count: {show_count(results["q1"])}"],
         },
         {
             "number": 2,
@@ -96,32 +101,32 @@ def build_analysis(database_url=None):  # pylint: disable=too-many-locals
                 "Among entries that give a nationality, what percentage are "
                 "international students?"
             ),
-            "answers": [f"Percent international: {oq.show_percent(q2)}"],
+            "answers": [f"Percent international: {show_percent(results["q2"])}"],
         },
         {
             "number": 3,
             "question": "What are the average GPA and GRE scores of applicants who give each one?",
             "answers": [
-                f"Average GPA: {oq.show_average(gpa)}",
-                f"Average GRE Quantitative: {oq.show_average(gre)}",
-                f"Average GRE Verbal: {oq.show_average(gre_v)}",
-                f"Average GRE Analytical Writing: {oq.show_average(gre_aw)}",
+                f"Average GPA: {show_average(gpa)}",
+                f"Average GRE Quantitative: {show_average(gre)}",
+                f"Average GRE Verbal: {show_average(gre_v)}",
+                f"Average GRE Analytical Writing: {show_average(gre_aw)}",
             ],
         },
         {
             "number": 4,
             "question": "What is the average GPA of American applicants who applied for Fall 2026?",
-            "answers": [f"Average GPA: {oq.show_average(q4)}"],
+            "answers": [f"Average GPA: {show_average(results["q4"])}"],
         },
         {
             "number": 5,
             "question": "What percentage of Fall 2025 entries are acceptances?",
-            "answers": [f"Fall 2025 acceptance percentage: {oq.show_percent(q5)}"],
+            "answers": [f"Fall 2025 acceptance percentage: {show_percent(results["q5"])}"],
         },
         {
             "number": 6,
             "question": "What is the average GPA of accepted applicants who applied for Fall 2026?",
-            "answers": [f"Average GPA: {oq.show_average(q6)}"],
+            "answers": [f"Average GPA: {show_average(results["q6"])}"],
         },
         {
             "number": 7,
@@ -130,7 +135,7 @@ def build_analysis(database_url=None):  # pylint: disable=too-many-locals
                 "Computer Science applicants?"
             ),
             "answers": [
-                f"Johns Hopkins master's Computer Science entries: {oq.show_count(q7)}"
+                f"Johns Hopkins master's Computer Science entries: {show_count(results["q7"])}"
             ],
         },
         {
@@ -139,15 +144,15 @@ def build_analysis(database_url=None):  # pylint: disable=too-many-locals
                 "How many Fall 2026 entries are acceptances for a PhD in Computer "
                 "Science at Georgetown, MIT, Stanford or Carnegie Mellon?"
             ),
-            "answers": [f"Original-field count: {oq.show_count(q8)}"],
+            "answers": [f"Original-field count: {show_count(results["q8"])}"],
         },
         {
             "number": 9,
             "question": "Repeat Question 8 using the LLM-generated program and university fields.",
             "answers": [
-                f"Original-field count: {oq.show_count(q8)}",
-                f"LLM-field count: {oq.show_count(q9)}",
-                f"Difference: {q9 - q8:+,}",
+                f"Original-field count: {show_count(results["q8"])}",
+                f"LLM-field count: {show_count(results["q9"])}",
+                f"Difference: {results["q9"] - results["q8"]:+,}",
             ],
         },
         {
@@ -156,7 +161,7 @@ def build_analysis(database_url=None):  # pylint: disable=too-many-locals
                 "Do international applicants report a higher average GRE "
                 "Quantitative score than American applicants?"
             ),
-            "answers": q10_answers,
+            "answers": group_lines(results["q10"]),
             "mine": True,
         },
         {
@@ -165,7 +170,7 @@ def build_analysis(database_url=None):  # pylint: disable=too-many-locals
                 "For Fall 2026, is the average GPA of accepted applicants higher "
                 "than that of rejected applicants?"
             ),
-            "answers": q11_answers,
+            "answers": group_lines(results["q11"]),
             "mine": True,
         },
     ]
@@ -229,7 +234,7 @@ def create_app(config=None, scraper=None, loader=None, query_fn=None):
             return jsonify(busy=True), 409
         try:
             run_pull(scraper, loader)
-        except Exception as err:  # pylint: disable=broad-except
+        except PULL_ERRORS as err:
             return jsonify(ok=False, error=str(err)), 500
         finally:
             state.finish()

@@ -68,7 +68,7 @@ class FakeScrapeDriver:
         """Count the call, and fail the first time if asked to."""
         self.quit_calls += 1
         if self.fail_first_quit and self.quit_calls == 1:
-            raise RuntimeError("already closed")
+            raise WebDriverException("already closed")
 
 
 def make_page(records, next_url=None):
@@ -80,8 +80,8 @@ def make_page(records, next_url=None):
 def offline(monkeypatch):
     """Replace robots.txt, the browser and sleep so scrape_data runs offline."""
     driver = FakeScrapeDriver()
-    monkeypatch.setattr(scrape, "_robots_allows", lambda path: True)
-    monkeypatch.setattr(scrape, "_attach_driver", lambda address=None: driver)
+    monkeypatch.setattr(scrape, "robots_allows", lambda path: True)
+    monkeypatch.setattr(scrape, "attach_driver", lambda address=None: driver)
     monkeypatch.setattr(scrape.time, "sleep", lambda seconds: None)
     return driver
 
@@ -101,7 +101,7 @@ def test_robots_allows_a_path_the_file_permits(monkeypatch):
         lambda request, timeout=None: FakeResponse("User-agent: *\nDisallow: /private/"),
     )
     # Then /survey/ is allowed
-    assert scrape._robots_allows("/survey/") is True
+    assert scrape.robots_allows("/survey/") is True
 
 
 def test_robots_blocks_a_path_the_file_forbids(monkeypatch):
@@ -111,7 +111,7 @@ def test_robots_blocks_a_path_the_file_forbids(monkeypatch):
         lambda request, timeout=None: FakeResponse("User-agent: *\nDisallow: /survey/"),
     )
     # Then /survey/ is not allowed, even when given as a full url
-    assert scrape._robots_allows("https://www.thegradcafe.com/survey/") is False
+    assert scrape.robots_allows("https://www.thegradcafe.com/survey/") is False
 
 
 @pytest.mark.parametrize(
@@ -123,7 +123,7 @@ def test_robots_blocks_a_path_the_file_forbids(monkeypatch):
     ],
 )
 def test_only_https_links_on_the_site_are_followed(url, expected):
-    assert scrape._is_same_site(url) is expected
+    assert scrape.is_same_site(url) is expected
 
 
 def test_attach_driver_uses_the_given_debugger_address(monkeypatch):
@@ -134,9 +134,9 @@ def test_attach_driver_uses_the_given_debugger_address(monkeypatch):
         seen["address"] = options.debugger_address
         return "driver"
 
-    monkeypatch.setattr(scrape.webdriver, "Chrome", fake_chrome)
+    monkeypatch.setattr(scrape, "Chrome", fake_chrome)
     # When we attach
-    driver = scrape._attach_driver("127.0.0.1:9999")
+    driver = scrape.attach_driver("127.0.0.1:9999")
     # Then it connects to that address
     assert driver == "driver"
     assert seen["address"] == "127.0.0.1:9999"
@@ -147,7 +147,7 @@ def test_fetch_page_json_reads_the_data_page_attribute(monkeypatch):
     monkeypatch.setattr(scrape, "WebDriverWait", FakeWait)
     driver = FakePageDriver("<div id='app' data-page='{\"props\": {\"n\": 1}}'></div>")
     # When we fetch it
-    data = scrape._fetch_page_json(driver, "https://www.thegradcafe.com/survey/")
+    data = scrape.fetch_page_json(driver, "https://www.thegradcafe.com/survey/")
     # Then the JSON is returned
     assert data == {"props": {"n": 1}}
     assert driver.visited == ["https://www.thegradcafe.com/survey/"]
@@ -159,7 +159,7 @@ def test_fetch_page_json_fails_when_the_data_is_missing(monkeypatch):
     driver = FakePageDriver("<html></html>")
     # Then fetching it raises a clear error
     with pytest.raises(RuntimeError, match="Could not find"):
-        scrape._fetch_page_json(driver, "https://www.thegradcafe.com/survey/")
+        scrape.fetch_page_json(driver, "https://www.thegradcafe.com/survey/")
 
 
 def test_raw_records_are_appended_and_read_back(tmp_path):
@@ -185,7 +185,7 @@ def test_state_is_saved_and_read_back(tmp_path):
 
 def test_scrape_data_refuses_when_robots_forbids(monkeypatch, tmp_path):
     # Given a robots.txt that forbids /survey/
-    monkeypatch.setattr(scrape, "_robots_allows", lambda path: False)
+    monkeypatch.setattr(scrape, "robots_allows", lambda path: False)
     # Then scraping stops before doing anything
     with pytest.raises(RuntimeError, match="robots.txt"):
         scrape.scrape_data(**scrape_paths(tmp_path))
@@ -197,7 +197,7 @@ def test_scrape_data_saves_each_page_until_there_is_no_next(offline, monkeypatch
         scrape.SURVEY_URL: make_page([{"id": 1}, {"id": 2}], NEXT_URL),
         NEXT_URL: make_page([{"id": 3}], None),
     }
-    monkeypatch.setattr(scrape, "_fetch_page_json", lambda driver, url: pages[url])
+    monkeypatch.setattr(scrape, "fetch_page_json", lambda driver, url: pages[url])
     paths = scrape_paths(tmp_path)
     # When we scrape
     records = scrape.scrape_data(max_records=10, **paths)
@@ -215,7 +215,7 @@ def test_scrape_data_stops_at_max_records(offline, monkeypatch, tmp_path):
         requested.append(url)
         return make_page([{"id": 1}, {"id": 2}], NEXT_URL)
 
-    monkeypatch.setattr(scrape, "_fetch_page_json", fake_fetch)
+    monkeypatch.setattr(scrape, "fetch_page_json", fake_fetch)
     # When we scrape with max_records 2
     records = scrape.scrape_data(max_records=2, **scrape_paths(tmp_path))
     # Then the second page is never requested
@@ -245,7 +245,7 @@ def test_scrape_data_resumes_from_the_saved_state(offline, monkeypatch, tmp_path
         requested.append(url)
         return make_page([{"id": 2}], None)
 
-    monkeypatch.setattr(scrape, "_fetch_page_json", fake_fetch)
+    monkeypatch.setattr(scrape, "fetch_page_json", fake_fetch)
     # When we scrape again
     records = scrape.scrape_data(max_records=10, **paths)
     # Then it starts at the saved link and keeps the old record
@@ -265,8 +265,8 @@ def test_scrape_data_reattaches_after_a_chrome_error(monkeypatch, tmp_path):
     # Given a browser whose first close fails, and one page that fails once
     driver = FakeScrapeDriver(fail_first_quit=True)
     attached = []
-    monkeypatch.setattr(scrape, "_robots_allows", lambda path: True)
-    monkeypatch.setattr(scrape, "_attach_driver",
+    monkeypatch.setattr(scrape, "robots_allows", lambda path: True)
+    monkeypatch.setattr(scrape, "attach_driver",
                         lambda address=None: attached.append(1) or driver)
     monkeypatch.setattr(scrape.time, "sleep", lambda seconds: None)
     attempts = []
@@ -277,7 +277,7 @@ def test_scrape_data_reattaches_after_a_chrome_error(monkeypatch, tmp_path):
             raise WebDriverException("tab crashed")
         return make_page([{"id": 1}], None)
 
-    monkeypatch.setattr(scrape, "_fetch_page_json", flaky_fetch)
+    monkeypatch.setattr(scrape, "fetch_page_json", flaky_fetch)
     # When we scrape
     records = scrape.scrape_data(max_records=10, **scrape_paths(tmp_path))
     # Then it attached a second time and still got the record
@@ -291,7 +291,7 @@ def test_scrape_data_gives_up_after_too_many_chrome_errors(offline, monkeypatch,
     def always_crashes(driver, url):
         raise WebDriverException("tab crashed")
 
-    monkeypatch.setattr(scrape, "_fetch_page_json", always_crashes)
+    monkeypatch.setattr(scrape, "fetch_page_json", always_crashes)
     # When we scrape
     records = scrape.scrape_data(max_records=10, **scrape_paths(tmp_path))
     # Then it stops with a message and returns what it has
@@ -304,7 +304,7 @@ def test_scrape_data_stops_on_any_other_error(offline, monkeypatch, tmp_path, ca
     def fails(driver, url):
         raise ValueError("bad page")
 
-    monkeypatch.setattr(scrape, "_fetch_page_json", fails)
+    monkeypatch.setattr(scrape, "fetch_page_json", fails)
     # When we scrape
     records = scrape.scrape_data(max_records=10, **scrape_paths(tmp_path))
     # Then it stops right away and says why

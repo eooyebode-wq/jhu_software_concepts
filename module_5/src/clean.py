@@ -14,7 +14,9 @@ import sys
 
 from scrape import DEFAULT_RAW_PATH, _build_entry_url, _load_raw_records
 
-LLM_HOSTING_DIR = "llm_hosting"
+LLM_HOSTING_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), os.pardir, "llm_hosting"
+)
 DEFAULT_LLM_WORK_DIR = "_llm_work"
 DEFAULT_N_WORKERS = 2
 DEFAULT_N_THREADS_PER_WORKER = 5
@@ -236,8 +238,11 @@ def main(argv=None):
     parser.add_argument("--llm-out-path", default="llm_extend_applicant_data.json")
     parser.add_argument("--n-workers", type=int, default=DEFAULT_N_WORKERS)
     parser.add_argument("--n-threads", type=int, default=DEFAULT_N_THREADS_PER_WORKER)
-    parser.add_argument("--skip-structuring", action="store_true",
-                         help="Skip the raw->applicant_data.json step and go straight to --llm-extend.")
+    parser.add_argument(
+        "--skip-structuring",
+        action="store_true",
+        help="Skip the raw->applicant_data.json step and go straight to --llm-extend.",
+    )
     args = parser.parse_args(argv)
 
     structured = None

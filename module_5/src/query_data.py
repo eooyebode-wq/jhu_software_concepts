@@ -1,15 +1,12 @@
 """Answer the Grad Cafe analysis questions with raw SQL through psycopg."""
 
-# This file and orm_queries.py print the same results in the same format on
-# purpose, so the two can be compared side by side.
-# pylint: disable=duplicate-code
-
 from typing import NamedTuple
 
 import psycopg
 from psycopg import sql
 
 from db_config import get_connection
+from formatting import show_average, show_count, show_percent
 from sql_utils import DEFAULT_LIMIT, clamp_limit
 
 APPLICANTS = sql.Identifier("applicants")
@@ -335,68 +332,61 @@ def count_matching(conn, column, value):
     return fetch_value(conn, matching_count_stmt(column), (value,))
 
 
-def show_count(value):
-    """Whole number with commas, like 19,290."""
-    return f"{int(value):,}"
+def fetch_answers(conn):
+    """Run every query and return the raw answers in a dict."""
+    return {
+        "q1": count_matching(conn, "term", "fall 2026"),
+        "q2": fetch_value(conn, *Q2),
+        "scores": fetch_row(conn, *Q3),
+        "q4": fetch_value(conn, *Q4),
+        "q5": fetch_value(conn, *Q5),
+        "q6": fetch_value(conn, *Q6),
+        "q7": fetch_value(conn, *Q7),
+        "q8": fetch_value(conn, *Q8),
+        "q9": fetch_value(conn, *Q9),
+        "q10": fetch_all(conn, *Q10),
+        "q11": fetch_all(conn, *Q11),
+    }
 
 
-def show_percent(value):
-    """Two decimals and a percent sign, like 50.09%."""
-    if value is None:
-        return "N/A"
-    return f"{value:.2f}%"
-
-
-def show_average(value):
-    """Two decimals, like 3.79."""
-    if value is None:
-        return "N/A"
-    return f"{value:.2f}"
-
-
-def main():  # pylint: disable=too-many-locals
-    """Run every query and print the answers."""
-    try:
-        with get_connection() as conn:
-            q1 = count_matching(conn, "term", "fall 2026")
-            q2 = fetch_value(conn, *Q2)
-            gpa, gre, gre_v, gre_aw = fetch_row(conn, *Q3)
-            q4 = fetch_value(conn, *Q4)
-            q5 = fetch_value(conn, *Q5)
-            q6 = fetch_value(conn, *Q6)
-            q7 = fetch_value(conn, *Q7)
-            q8 = fetch_value(conn, *Q8)
-            q9 = fetch_value(conn, *Q9)
-            q10_rows = fetch_all(conn, *Q10)
-            q11_rows = fetch_all(conn, *Q11)
-    except psycopg.Error as err:
-        print(f"Database error: {err}")
-        return
-
-    print(f"Q1. Fall 2026 applicant count: {show_count(q1)}")
-    print(f"Q2. Percent international: {show_percent(q2)}")
+def print_answers(answers):
+    """Print the answers in the required format."""
+    gpa, gre, gre_v, gre_aw = answers["scores"]
+    print(f"Q1. Fall 2026 applicant count: {show_count(answers['q1'])}")
+    print(f"Q2. Percent international: {show_percent(answers['q2'])}")
     print("Q3. Averages for applicants who report each score")
     print(f"    Average GPA: {show_average(gpa)}")
     print(f"    Average GRE Quantitative: {show_average(gre)}")
     print(f"    Average GRE Verbal: {show_average(gre_v)}")
     print(f"    Average GRE Analytical Writing: {show_average(gre_aw)}")
-    print(f"Q4. Average GPA of American applicants, Fall 2026: {show_average(q4)}")
-    print(f"Q5. Fall 2025 acceptance percentage: {show_percent(q5)}")
-    print(f"Q6. Average GPA of accepted applicants, Fall 2026: {show_average(q6)}")
-    print(f"Q7. Johns Hopkins master's Computer Science entries: {show_count(q7)}")
+    print(f"Q4. Average GPA of American applicants, Fall 2026: {show_average(answers['q4'])}")
+    print(f"Q5. Fall 2025 acceptance percentage: {show_percent(answers['q5'])}")
+    print(f"Q6. Average GPA of accepted applicants, Fall 2026: {show_average(answers['q6'])}")
+    print(f"Q7. Johns Hopkins master's Computer Science entries: {show_count(answers['q7'])}")
     print("Q8/Q9. Fall 2026 PhD Computer Science acceptances at Georgetown,")
     print("       MIT, Stanford and Carnegie Mellon")
-    print(f"    Original-field count: {show_count(q8)}")
-    print(f"    LLM-field count: {show_count(q9)}")
-    print(f"    Difference: {q9 - q8:+,}")
+    print(f"    Original-field count: {show_count(answers['q8'])}")
+    print(f"    LLM-field count: {show_count(answers['q9'])}")
+    print(f"    Difference: {answers['q9'] - answers['q8']:+,}")
 
     print("Q10. Average GRE Quantitative by nationality")
-    for group, how_many, average in q10_rows:
+    for group, how_many, average in answers["q10"]:
         print(f"    {group}: {show_average(average)} ({show_count(how_many)} applicants)")
 
     print("Q11. Average GPA by decision, Fall 2026")
-    for decision, how_many, average in q11_rows:
+    for decision, how_many, average in answers["q11"]:
         print(f"    {decision}: {show_average(average)} ({show_count(how_many)} applicants)")
+
+
+def main():
+    """Run every query and print the answers."""
+    try:
+        with get_connection() as conn:
+            answers = fetch_answers(conn)
+    except psycopg.Error as err:
+        print(f"Database error: {err}")
+        return
+    print_answers(answers)
 
 
 if __name__ == "__main__":

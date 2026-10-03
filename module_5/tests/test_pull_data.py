@@ -45,8 +45,8 @@ def make_page(records, next_url=None):
 def offline(monkeypatch):
     """Replace robots.txt, the browser and sleep so pulling runs offline."""
     driver = FakeDriver()
-    monkeypatch.setattr(pull_data.scrape, "_robots_allows", lambda path: True)
-    monkeypatch.setattr(pull_data.scrape, "_attach_driver", lambda: driver)
+    monkeypatch.setattr(pull_data.scrape, "robots_allows", lambda path: True)
+    monkeypatch.setattr(pull_data.scrape, "attach_driver", lambda: driver)
     monkeypatch.setattr(pull_data.time, "sleep", lambda seconds: None)
     return driver
 
@@ -80,7 +80,7 @@ def test_fetch_keeps_new_entries_and_stops_at_a_page_with_none(offline, monkeypa
         pull_data.scrape.SURVEY_URL: make_page([{"id": 1}, {"id": 2}, {"id": 3}], NEXT_URL),
         NEXT_URL: make_page([{"id": 2}], "https://www.thegradcafe.com/survey/?page=3"),
     }
-    monkeypatch.setattr(pull_data.scrape, "_fetch_page_json", lambda driver, url: pages[url])
+    monkeypatch.setattr(pull_data.scrape, "fetch_page_json", lambda driver, url: pages[url])
     # When we fetch with id 2 already known
     records = pull_data.fetch_new_raw_records({2})
     # Then only the new entries come back and the browser is closed
@@ -95,7 +95,7 @@ def test_fetch_follows_next_links_until_there_are_none(offline, monkeypatch):
         pull_data.scrape.SURVEY_URL: make_page([{"id": 1}], NEXT_URL),
         NEXT_URL: make_page([{"id": 2}], None),
     }
-    monkeypatch.setattr(pull_data.scrape, "_fetch_page_json", lambda driver, url: pages[url])
+    monkeypatch.setattr(pull_data.scrape, "fetch_page_json", lambda driver, url: pages[url])
     # When we fetch
     records = pull_data.fetch_new_raw_records(set())
     # Then both pages are read
@@ -104,12 +104,12 @@ def test_fetch_follows_next_links_until_there_are_none(offline, monkeypatch):
 
 def test_fetch_refuses_when_robots_forbids(monkeypatch):
     # Given a robots.txt that forbids /survey/ and a browser that must not be used
-    monkeypatch.setattr(pull_data.scrape, "_robots_allows", lambda path: False)
+    monkeypatch.setattr(pull_data.scrape, "robots_allows", lambda path: False)
 
     def must_not_attach():
         raise AssertionError("the browser should not be opened")
 
-    monkeypatch.setattr(pull_data.scrape, "_attach_driver", must_not_attach)
+    monkeypatch.setattr(pull_data.scrape, "attach_driver", must_not_attach)
     # Then fetching raises before opening the browser
     with pytest.raises(RuntimeError, match="robots.txt"):
         pull_data.fetch_new_raw_records(set())
@@ -117,7 +117,7 @@ def test_fetch_refuses_when_robots_forbids(monkeypatch):
 
 def test_fetch_refuses_an_off_site_link_and_closes_the_browser(offline, monkeypatch):
     # Given a first page that links to another site
-    monkeypatch.setattr(pull_data.scrape, "_fetch_page_json",
+    monkeypatch.setattr(pull_data.scrape, "fetch_page_json",
                         lambda driver, url: make_page([{"id": 1}], "https://example.com/"))
     # Then fetching raises, and the browser is still closed
     with pytest.raises(RuntimeError, match="off-site"):

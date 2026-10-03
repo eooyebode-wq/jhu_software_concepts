@@ -10,6 +10,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from db_config import get_database_url
 
 
+# SQLAlchemy models only describe columns, so they have no public methods.
 class Base(DeclarativeBase):  # pylint: disable=too-few-public-methods
     """Parent class for every model."""
 

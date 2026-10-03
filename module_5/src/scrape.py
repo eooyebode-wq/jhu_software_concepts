@@ -8,15 +8,16 @@ import json
 import os
 import time
 import urllib.request
-import urllib.robotparser as robotparser
+from urllib import robotparser
 
 from bs4 import BeautifulSoup
-from selenium import webdriver
 from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.webdriver import WebDriver as Chrome
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from urllib3.exceptions import HTTPError
 from urllib3.util import Url, parse_url
 
 BASE_URL = "https://www.thegradcafe.com"
@@ -29,7 +30,7 @@ DEBUGGER_ADDRESS = "127.0.0.1:9222"
 USER_AGENT = "jhu-software-concepts-module2-scraper"
 
 
-def _robots_allows(path: str, user_agent: str = USER_AGENT) -> bool:
+def robots_allows(path: str, user_agent: str = USER_AGENT) -> bool:
     """Check thegradcafe.com/robots.txt before fetching `path`.
 
     Uses Python's built-in robotparser here instead of urllib3, since
@@ -51,23 +52,23 @@ def _build_entry_url(entry_id: int) -> str:
     return Url(scheme="https", host="www.thegradcafe.com", path=f"/result/{entry_id}").url
 
 
-def _is_same_site(url: str) -> bool:
+def is_same_site(url: str) -> bool:
     """Inspect a URL (e.g. a pagination cursor link) via urllib3 before following it."""
     parsed = parse_url(url)
     return parsed.host == "www.thegradcafe.com" and parsed.scheme in (None, "https")
 
 
-def _attach_driver(debugger_address: str = DEBUGGER_ADDRESS) -> webdriver.Chrome:
+def attach_driver(debugger_address: str = DEBUGGER_ADDRESS) -> Chrome:
     """Connect Selenium to a Chrome window that's already open and already
     past Cloudflare's check, instead of opening a new browser (Chrome has to
     already be running with --remote-debugging-port, see README).
     """
     options = Options()
     options.debugger_address = debugger_address
-    return webdriver.Chrome(options=options)
+    return Chrome(options=options)
 
 
-def _fetch_page_json(driver: webdriver.Chrome, url: str) -> dict:
+def fetch_page_json(driver: Chrome, url: str) -> dict:
     """Go to `url` and pull out the page's data.
 
     The site hides its results as JSON text inside the page's HTML, but that
@@ -140,7 +141,7 @@ def scrape_data(
     (up to MAX_CONSECUTIVE_DRIVER_RETRIES times) before giving up. Any other
     kind of failure stops the scraper right away instead of retrying.
     """
-    if not _robots_allows("/survey/"):
+    if not robots_allows("/survey/"):
         raise RuntimeError("robots.txt disallows /survey/ -- refusing to scrape.")
 
     existing = _load_raw_records(raw_path)
@@ -153,33 +154,41 @@ def scrape_data(
     total = len(existing)
     print(f"Resuming from {total} saved records." if total else "Starting fresh scrape.")
 
-    driver = _attach_driver(debugger_address)
+    driver = attach_driver(debugger_address)
     consecutive_retries = 0
 
     try:
         while url and total < max_records:
-            if not _is_same_site(url):
+            if not is_same_site(url):
                 raise RuntimeError(f"Refusing to follow off-site URL: {url}")
 
             try:
-                data = _fetch_page_json(driver, url)
+                data = fetch_page_json(driver, url)
             except WebDriverException as exc:
                 consecutive_retries += 1
                 if consecutive_retries > MAX_CONSECUTIVE_DRIVER_RETRIES:
-                    print(f"Stopping: {consecutive_retries} consecutive Chrome session failures "
-                          f"at {url} ({exc}). Progress saved -- rerun to resume.")
+                    print(
+                        f"Stopping: {consecutive_retries} consecutive Chrome "
+                        f"session failures at {url} ({exc}). Progress saved -- "
+                        "rerun to resume."
+                    )
                     break
-                print(f"Chrome session error at {url} ({exc}); "
-                      f"re-attaching (retry {consecutive_retries}/{MAX_CONSECUTIVE_DRIVER_RETRIES}).")
+                print(
+                    f"Chrome session error at {url} ({exc}); re-attaching "
+                    f"(retry {consecutive_retries}/{MAX_CONSECUTIVE_DRIVER_RETRIES})."
+                )
                 try:
                     driver.quit()
-                except Exception:
+                except (WebDriverException, HTTPError):
                     pass
                 time.sleep(POLITE_DELAY_SECONDS)
-                driver = _attach_driver(debugger_address)
+                driver = attach_driver(debugger_address)
                 continue
-            except Exception as exc:
-                print(f"Stopping: page fetch failed for {url} ({exc}). Progress saved -- rerun to resume.")
+            except (RuntimeError, ValueError) as exc:
+                print(
+                    f"Stopping: page fetch failed for {url} ({exc}). "
+                    "Progress saved -- rerun to resume."
+                )
                 break
 
             consecutive_retries = 0
