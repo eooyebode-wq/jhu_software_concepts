@@ -16,7 +16,7 @@ from selenium.common.exceptions import WebDriverException
 import scrape
 from clean import clean_data
 from db_config import get_connection
-from load_data import create_table, load_rows, make_row
+from load_data import load_rows, make_row
 from sql_utils import MAX_LIMIT
 
 # The Module 2 scraper helpers start with an underscore, but they are reused
@@ -122,7 +122,7 @@ def scrape_new_records(database_url=None):
     This is the default scraper used by the Pull Data button.
 
     Args:
-        database_url: Optional URL that replaces DATABASE_URL.
+        database_url: Optional URL that replaces the DB_* variables.
 
     Returns:
         A list of raw Grad Cafe records.
@@ -134,7 +134,6 @@ def scrape_new_records(database_url=None):
         raise RuntimeError(CHROME_MESSAGE)
 
     with get_connection(database_url) as conn:
-        create_table(conn)
         known_ids = get_known_ids(conn)
     print(f"Database has {len(known_ids):,} entries.", flush=True)
     return fetch_new_raw_records(known_ids)

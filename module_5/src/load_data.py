@@ -136,7 +136,11 @@ def make_row(record):
 
 
 def create_table(conn):
-    """Create the applicants table if it is not already there."""
+    """Create the applicants table if it is not already there.
+
+    The app user cannot create tables. Run this once as an admin account,
+    or use db/schema.sql.
+    """
     with conn.cursor() as cur:
         cur.execute(CREATE_TABLE_SQL)
     conn.commit()
@@ -165,20 +169,19 @@ def insert_rows(conn, rows):
 
 
 def load_rows(rows, database_url=None):
-    """Create the table if needed and insert the rows in one transaction.
+    """Insert the rows in one transaction.
 
     If anything fails, the connection is closed without a commit, so no
     partial writes are left behind.
 
     Args:
         rows: Row tuples in column order, as made by make_row.
-        database_url: Optional URL that replaces DATABASE_URL.
+        database_url: Optional URL that replaces the DB_* variables.
 
     Returns:
         How many rows were really added.
     """
     with get_connection(database_url) as conn:
-        create_table(conn)
         return insert_rows(conn, rows)
 
 
@@ -205,7 +208,6 @@ def main():
 
     try:
         with get_connection() as conn:
-            create_table(conn)
             added = insert_rows(conn, rows)
     except psycopg.Error as err:
         print(f"Database error: {err}")

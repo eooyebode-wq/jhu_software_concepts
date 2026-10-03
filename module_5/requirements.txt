@@ -4,6 +4,7 @@
 # Database
 psycopg[binary]==3.3.6
 SQLAlchemy==2.0.54
+python-dotenv==1.2.4
 
 # Web app
 Flask==3.1.3

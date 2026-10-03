@@ -54,7 +54,7 @@ def get_session(database_url=None):
     """Open a session on the database.
 
     Args:
-        database_url: Optional URL that replaces DATABASE_URL, used by tests.
+        database_url: Optional URL that replaces the DB_* variables, used by tests.
 
     Returns:
         A new SQLAlchemy session.

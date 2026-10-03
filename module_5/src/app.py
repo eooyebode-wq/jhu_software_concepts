@@ -11,7 +11,7 @@ from models import Applicant, get_session
 from pull_data import run_pull, scrape_new_records
 
 DB_ERROR_MESSAGE = (
-    "The database could not be reached. Check DATABASE_URL and make sure "
+    "The database could not be reached. Check the DB_* settings and make sure "
     "PostgreSQL is running."
 )
 
@@ -48,7 +48,7 @@ def build_analysis(database_url=None):  # pylint: disable=too-many-locals
     """Ask the database every question and return the answers as text.
 
     Args:
-        database_url: Optional URL that replaces DATABASE_URL.
+        database_url: Optional URL that replaces the DB_* variables.
 
     Returns:
         A dict with one key, "questions": a list of dicts with the keys
@@ -183,7 +183,7 @@ def create_app(config=None, scraper=None, loader=None, query_fn=None):
 
     Args:
         config: Dict merged into app.config. Set "DATABASE_URL" here to use
-            a different database than the DATABASE_URL environment variable.
+            a different database than the DB_* environment variables.
         scraper: Function with no arguments that returns raw records.
         loader: Function that takes a list of row tuples and returns how many
             were added.

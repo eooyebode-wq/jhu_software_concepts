@@ -1,30 +1,45 @@
-"""Database connection settings, read from the DATABASE_URL variable."""
+"""Database connection settings, read from the DB_* environment variables."""
 
 import os
+from urllib.parse import quote
 
 import psycopg
+from dotenv import load_dotenv
+
+REQUIRED_VARIABLES = ("DB_HOST", "DB_PORT", "DB_NAME", "DB_USER", "DB_PASSWORD")
 
 
 def get_database_url():
-    """Return the database URL from the DATABASE_URL environment variable.
+    """Build the database URL from the DB_* environment variables.
+
+    A local .env file is read first. Variables already set in the
+    environment win over the file.
 
     Returns:
-        The URL, for example postgresql://user:password@localhost:5432/gradcafe.
+        A URL such as postgresql://user:password@localhost:5432/gradcafe.
 
     Raises:
-        RuntimeError: If DATABASE_URL is not set.
+        RuntimeError: If any of the variables is missing or empty.
     """
-    url = os.environ.get("DATABASE_URL")
-    if not url:
-        raise RuntimeError("DATABASE_URL is not set.")
-    return url
+    load_dotenv()
+    values = {name: os.environ.get(name) for name in REQUIRED_VARIABLES}
+    missing = [name for name, value in values.items() if not value]
+    if missing:
+        raise RuntimeError("Set these environment variables: " + ", ".join(missing))
+    user = quote(values["DB_USER"], safe="")
+    password = quote(values["DB_PASSWORD"], safe="")
+    return (
+        f"postgresql://{user}:{password}@{values['DB_HOST']}:{values['DB_PORT']}"
+        f"/{values['DB_NAME']}"
+    )
 
 
 def get_connection(database_url=None):
     """Open and return a psycopg connection to the database.
 
     Args:
-        database_url: Optional URL that replaces DATABASE_URL, used by tests.
+        database_url: Optional URL that replaces the DB_* variables, used by
+            tests.
 
     Returns:
         An open psycopg connection.

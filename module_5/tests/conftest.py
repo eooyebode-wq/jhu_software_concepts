@@ -1,7 +1,6 @@
 """Shared fixtures for the Grad Cafe tests."""
 
 import copy
-import os
 import sys
 from pathlib import Path
 
@@ -14,6 +13,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 # pylint: disable=wrong-import-position
 from app import create_app
+from db_config import get_database_url
 from load_data import create_table, load_rows
 from pull_data import run_pull
 
@@ -75,13 +75,14 @@ def src_dir():
 @pytest.fixture(scope="session")
 def database_url():
     """The test database URL. Stops the run if it could hit real data."""
-    url = os.environ.get("DATABASE_URL")
-    if not url:
-        pytest.exit("Set DATABASE_URL to a test database first.", returncode=2)
+    try:
+        url = get_database_url()
+    except RuntimeError as err:
+        pytest.exit(f"{err}. Point them at a test database first.", returncode=2)
     if "test" not in (make_url(url).database or ""):
         pytest.exit(
-            "The database name in DATABASE_URL must contain 'test', because "
-            "every test empties the applicants table.",
+            "DB_NAME must contain 'test', because every test empties the "
+            "applicants table.",
             returncode=2,
         )
     return url
