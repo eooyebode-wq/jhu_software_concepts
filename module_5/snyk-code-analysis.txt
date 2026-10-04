@@ -1,0 +1,39 @@
+
+Testing src ...
+
+Open Issues
+
+ ✗ [LOW] Path Traversal
+   Finding ID: d4eddba0-8be8-492b-9a25-8c33df583177
+   Path: clean.py, line 88
+   Info: Unsanitized input from a command line argument flows into json.dump, where it is used as a path. This may result in a Path Traversal vulnerability and allow an attacker to write arbitrary files.
+
+ ✗ [LOW] Path Traversal
+   Finding ID: 7396cbd9-3462-4e63-b0b9-cb0d8d63d07c
+   Path: clean.py, line 93
+   Info: Unsanitized input from a command line argument flows into open, where it is used as a path. This may result in a Path Traversal vulnerability and allow an attacker to read arbitrary files.
+
+ ✗ [LOW] Path Traversal
+   Finding ID: 19983d20-b04e-4550-b30d-e4b8d7f73308
+   Path: load_data.py, line 151
+   Info: Unsanitized input from a command line argument flows into open, where it is used as a path. This may result in a Path Traversal vulnerability and allow an attacker to read arbitrary files.
+
+
+
+╭────────────────────────────────────────────────────╮
+│ Test Summary                                       │
+│                                                    │
+│   Organization:      eooyebode-wq                  │
+│   Test type:         Static code analysis          │
+│   Project path:      src                           │
+│                                                    │
+│   Total issues:   3                                │
+│   Ignored issues: 0 [ 0 HIGH  0 MEDIUM  0 LOW ]    │
+│   Open issues:    3 [ 0 HIGH  0 MEDIUM  3 LOW ]    │
+╰────────────────────────────────────────────────────╯
+    
+💡 Tip
+
+   To view ignored issues, use the --include-ignores option.
+                                                            
+
