@@ -1,4 +1,4 @@
-# Module 4 - Testing and Documentation
+# Module 5 - Software Assurance and Security
 
 ## Name
 
@@ -6,20 +6,35 @@ Emmanuel Oyebode, JHED ID: eooyebod1
 
 ## What this project does
 
-This is Module 3's Grad Cafe database, SQL analysis and Flask app, now with a
-pytest suite, 100% test coverage, a GitHub Actions workflow, and Sphinx
-documentation published on Read the Docs.
+This is Module 4's Grad Cafe database, SQL analysis and Flask app, hardened
+against SQL injection and set up so it can be installed and checked the same
+way on any machine. It adds safe SQL composition with a row limit on every
+query, database credentials from environment variables, a least-privilege
+database user, Pylint at 10/10, a dependency graph, a Snyk scan, and a GitHub
+Actions workflow that runs all of it.
 
 ## Layout
 
 ```
-module_4/
-  src/      application code (Flask app, ETL, database, queries)
-  tests/    the whole pytest suite
-  docs/     Sphinx project (source and build)
+module_5/
+  src/                    application code (Flask app, ETL, database, queries)
+  tests/                  the whole pytest suite, including SQL injection tests
+  db/                     schema.sql and least_privilege.sql
+  docs/                   Sphinx project (source)
+  llm_hosting/            local LLM server used by the cleaning step
+  dependency.svg          dependency graph made with pydeps
+  snyk-analysis.png       screenshot of snyk test
+  snyk-code-analysis.txt  output of snyk code test
+  pylint_report.txt       final Pylint output (10.00/10)
+  coverage_summary.txt    output of the last test run
+  module_5_report.pdf     written report
+  .env.example            names of the environment variables
   pytest.ini
   requirements.txt
+  setup.py
 ```
+
+The workflow file is `.github/workflows/ci.yml` at the repository root.
 
 ## Fresh Install
 
@@ -53,31 +68,46 @@ uv pip install -e .
 removes anything not listed. `uv pip install -r requirements.txt` also works
 if you only want to add the listed packages.
 
-## Setup
+## Database setup
 
 1. Install PostgreSQL and create a database, for example `gradcafe`.
-2. Create a virtual environment and install the packages:
+2. As an admin account, create the table and the restricted user:
 
    ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   pip install -r requirements.txt
+   psql -d gradcafe -f db/schema.sql
+   psql -d gradcafe -f db/least_privilege.sql
    ```
 
-### Configuring PostgreSQL and DATABASE_URL
+3. In `psql`, set the user's password so it never lands in a file:
 
-The app and the tests both read one environment variable, `DATABASE_URL`, a
-standard PostgreSQL connection URL:
+   ```
+   \password gradcafe_app
+   ```
 
-```bash
-export DATABASE_URL="postgresql://localhost:5432/gradcafe"
-```
+`gradcafe_app` can connect, read `applicants` and add rows to it. It is not
+a superuser and cannot update, delete, create, drop or alter anything. The
+app does not create tables, so step 2 must be done first.
 
-No password or other secret is stored in the code.
+## Environment variables
+
+The app and the tests read the database settings from five environment
+variables. No credentials are stored in the code.
+
+| Variable | Meaning |
+| --- | --- |
+| `DB_HOST` | database host, for example `localhost` |
+| `DB_PORT` | database port, for example `5432` |
+| `DB_NAME` | database name |
+| `DB_USER` | database user, for example `gradcafe_app` |
+| `DB_PASSWORD` | that user's password |
+
+Copy `.env.example` to `.env` and fill in the values. The app reads `.env`
+automatically. Variables already set in the shell take priority over the
+file. `.env` is listed in `.gitignore` and must never be committed.
 
 ## Running the app
 
-From `module_4/src`:
+From `module_5/src`, with `.env` filled in:
 
 ```bash
 python app.py
@@ -88,21 +118,73 @@ Then open http://127.0.0.1:8080/analysis.
 ## Running the tests
 
 The tests use a **separate** database from the one the app runs against,
-because every test starts by emptying the `applicants` table. The database
-name in `DATABASE_URL` must contain the word `test`, or the test run refuses
-to start.
+because every test starts by emptying the `applicants` table. `DB_NAME` must
+contain the word `test`, or the test run refuses to start. The test user
+needs to own the test database, so use your own admin account there, not
+`gradcafe_app`.
 
-From the repository root:
+From `module_5/`:
 
 ```bash
-export DATABASE_URL="postgresql://localhost:5432/gradcafe_test"
-pytest module_4 -m "web or buttons or analysis or db or integration"
+export DB_HOST=localhost DB_PORT=5432 DB_NAME=gradcafe_test
+export DB_USER=your_admin_user DB_PASSWORD=your_password
+pytest -m "web or buttons or analysis or db or integration"
 ```
 
-That command is what `module_4/pytest.ini` is built for, and what
-`.github/workflows/tests.yml` runs in CI. It requires 100% coverage of
-`module_4/src`; the terminal output from the last run is saved at
-`module_4/coverage_summary.txt`.
+`pytest.ini` requires 100% coverage of `src`. The output of the last run is
+saved in `coverage_summary.txt`. The SQL injection tests are in
+`tests/test_sql_injection.py`.
+
+## SQL safety
+
+- Table and column names are added with `sql.Identifier`.
+- Values are passed as `%s` parameters, never joined into the SQL text.
+- Each statement is built first and run separately with
+  `cursor.execute(stmt, params)`.
+- Every query has a `LIMIT`. `clamp_limit` in `src/sql_utils.py` keeps any
+  requested limit between 1 and 100.
+
+## Security tools
+
+### Pylint
+
+Run from `module_5/`. Only `src` is checked:
+
+```bash
+pylint src
+```
+
+The final result is saved in `pylint_report.txt`: 10.00/10. CI runs
+`pylint src --fail-under=10`.
+
+### Dependency graph
+
+Graphviz must be installed (`brew install graphviz` on a Mac). From
+`module_5/`:
+
+```bash
+pydeps src/app.py --noshow -T svg -o dependency.svg
+```
+
+### Snyk
+
+Install the Snyk CLI (`brew tap snyk/tap && brew install snyk-cli`) and run
+`snyk auth` once. From `module_5/`, with the virtual environment active:
+
+```bash
+snyk test --file=requirements.txt --package-manager=pip
+snyk code test src
+```
+
+`snyk test` found no vulnerable dependencies (`snyk-analysis.png`).
+`snyk code test` found three low-severity path findings from command-line
+arguments, saved in `snyk-code-analysis.txt`.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request with four
+jobs: Pylint, dependency graph, Snyk and Pytest. The Snyk job needs a
+repository secret named `SNYK_TOKEN`.
 
 ## Documentation
 
@@ -111,10 +193,9 @@ the testing guide, is built with Sphinx and published on Read the Docs:
 
 https://eooyebode-jhu-software-concepts.readthedocs.io/en/latest/
 
-The built HTML also lives in this repo at `module_4/docs/build/html`. To
-rebuild it locally:
+To build the Module 5 copy locally, from `module_5/`:
 
 ```bash
-cd module_4/docs
-../venv/bin/sphinx-build -b html source build/html
+cd docs
+sphinx-build -b html source build/html
 ```

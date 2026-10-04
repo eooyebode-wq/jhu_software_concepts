@@ -4,13 +4,13 @@ Testing Guide
 Running the tests
 -------------------
 
-From the repository root, with ``DATABASE_URL`` pointing at a database whose
+From ``module_5``, with the ``DB_*`` variables pointing at a database whose
 name contains ``test``::
 
-    pytest module_4 -m "web or buttons or analysis or db or integration"
+    pytest -m "web or buttons or analysis or db or integration"
 
 This is the exact command CI runs, and it is required to hit 100% coverage
-of ``module_4/src``, per ``module_4/pytest.ini``.
+of ``src``, per ``pytest.ini``.
 
 Markers
 --------
@@ -34,7 +34,7 @@ one with a module-level ``pytestmark``:
    * - ``integration``
      - End-to-end flows: pull, update, then render
 
-Run one group on its own, for example ``pytest module_4 -m buttons``.
+Run one group on its own, for example ``pytest -m buttons``.
 
 Selectors
 ----------
@@ -47,7 +47,7 @@ The two buttons on the analysis page carry stable test ids:
 Fixtures and test doubles
 ----------------------------
 
-Shared fixtures live in ``module_4/tests/conftest.py``.
+Shared fixtures live in ``tests/conftest.py``.
 
 * ``app`` / ``client`` -- a Flask app and test client built on the test
   database, with a fake scraper already wired in.

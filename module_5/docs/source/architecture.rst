@@ -24,8 +24,8 @@ DB layer
 ---------
 
 ``models.py`` defines the ``Applicant`` SQLAlchemy model and opens sessions
-against ``DATABASE_URL``. ``load_data.py`` creates the ``applicants`` table
-and inserts rows, skipping any whose ``p_id`` is already stored. ``query_data.py``
+against the database named by the ``DB_*`` variables (see ``db_config.py``).
+``load_data.py`` inserts rows into the ``applicants`` table, skipping any whose ``p_id`` is already stored. ``query_data.py``
 and ``orm_queries.py`` answer the analysis questions, in raw SQL and in
 SQLAlchemy. ``app.py`` calls the SQLAlchemy versions to build the page.
 
