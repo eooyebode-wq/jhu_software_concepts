@@ -20,6 +20,7 @@ module_2/llm_hosting/models/
 *.env
 .venv/
 *.sql
+!module_5/db/*.sql
 *.dump
 module_3/screenshots_work/
 module_3/pull_data.log
